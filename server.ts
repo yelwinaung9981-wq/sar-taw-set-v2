@@ -91,6 +91,11 @@ app.use((req, res, next) => {
     res.json({ key });
   });
 
+  app.get("/api/config/mapbox-token", (req, res) => {
+    const token = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN || "";
+    res.json({ token });
+  });
+
   app.post("/api/gemini/autocomplete-address", async (req, res) => {
     const { query } = req.body;
     if (!query || typeof query !== 'string' || !query.trim()) {
@@ -143,7 +148,53 @@ app.use((req, res, next) => {
       }
     }
 
-    // 2. Gemini AI Grounding Search - Tier 2
+    // 2. Mapbox Search API - Tier 2
+    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN || "";
+    if (mapboxToken && mapboxToken !== "YOUR_API_KEY") {
+      try {
+        console.log(`[Autocomplete] MAPBOX_ACCESS_TOKEN is available. querying Mapbox Search API for "${trimmedQuery}"`);
+        const searchURL = new URL(`https://api.mapbox.com/search/geocode/v6/forward`);
+        searchURL.searchParams.append("q", `${trimmedQuery}, Malaysia`);
+        searchURL.searchParams.append("access_token", mapboxToken);
+        searchURL.searchParams.append("limit", "5");
+        const response = await fetch(searchURL.toString());
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data && Array.isArray(data.features)) {
+            const parsed = data.features.map((feature: any) => {
+              const context = feature.properties?.context || {};
+              const postcode = context.postcode?.name || "50000";
+              const city = context.place?.name || context.locality?.name || "Kuala Lumpur";
+              const state = context.region?.name || "WP Kuala Lumpur";
+              const building = feature.properties?.name || feature.properties?.full_address || "Selected Location";
+              const address = feature.properties?.name || feature.properties?.full_address || "";
+              
+              return {
+                building_name: building,
+                street_address: address,
+                postcode: postcode,
+                city: city,
+                state: state,
+                country: "Malaysia",
+                latitude: Number(feature.geometry?.coordinates?.[1] || 3.139),
+                longitude: Number(feature.geometry?.coordinates?.[0] || 101.686)
+              };
+            });
+            console.log(`[Autocomplete] Mapbox API successfully returned ${parsed.length} results.`);
+            res.json({ results: parsed, source: "mapbox" });
+            return;
+          }
+        } else {
+          const errText = await response.text();
+          console.warn("[Autocomplete] Mapbox HTTP fallback error:", response.status, errText);
+        }
+      } catch (err) {
+        console.error("[Autocomplete] Mapbox API fetch error:", err);
+      }
+    }
+
+    // 3. Gemini AI Grounding Search - Tier 3
     const apiKey = process.env.GEMINI_API_KEY;
     if (apiKey && apiKey !== "YOUR_API_KEY" && apiKey !== "MY_GEMINI_API_KEY") {
       try {
@@ -487,6 +538,41 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
         }
       } catch (err) {
         console.error("[Reverse Geocode Error] Google Maps API endpoint failure:", err);
+      }
+    }
+
+    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN || "";
+    if (mapboxToken && mapboxToken !== "YOUR_API_KEY") {
+      try {
+        console.log(`[Reverse Geocode] Routing reverse-geocody lookup to Mapbox for lat: ${latitude}, lng: ${longitude}`);
+        const response = await fetch(`https://api.mapbox.com/search/geocode/v6/reverse?longitude=${longitude}&latitude=${latitude}&access_token=${mapboxToken}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data && Array.isArray(data.features) && data.features.length > 0) {
+            const firstResult = data.features[0];
+            const context = firstResult.properties?.context || {};
+            
+            const postcode = context.postcode?.name || "50000";
+            const city = context.place?.name || context.locality?.name || "Kuala Lumpur";
+            const state = context.region?.name || "WP Kuala Lumpur";
+            const building = firstResult.properties?.name || firstResult.properties?.full_address || "Selected Location";
+            const address = firstResult.properties?.name || firstResult.properties?.full_address || "";
+            
+            res.json({
+              building_name: building,
+              street_address: address,
+              postcode: postcode,
+              city: city,
+              state: state,
+              country: "Malaysia",
+              latitude: Number(latitude),
+              longitude: Number(longitude)
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("[Reverse Geocode Error] Mapbox API endpoint failure:", err);
       }
     }
 

@@ -16,8 +16,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
-import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
-import { GoogleAddressMap } from '../components/GoogleAddressMap';
+import { MapboxAddressMap } from '../components/MapboxAddressMap';
 import { MALAYSIA_LOCATION_DATA } from '../data/malaysiaData';
 
 // High-fidelity Malaysian Landmarks for instant complete address auto-fills
@@ -763,7 +762,7 @@ export default function AddAddressPage() {
                 <div className={`w-full h-40 relative border-t ${
                   darkMode ? 'border-zinc-800/60' : 'border-zinc-100'
                 }`}>
-                  <GoogleAddressMap
+                  <MapboxAddressMap
                     locationToConfirm={{
                       name: "",
                       street: displayAddress || "",
@@ -991,7 +990,7 @@ export default function AddAddressPage() {
 
                 {/* Real-World High-Fidelity Interactive Map Area */}
                 <div className="relative flex-1 overflow-hidden flex items-center justify-center bg-black">
-                  <GoogleAddressMap
+                  <MapboxAddressMap
                     locationToConfirm={locationToConfirm}
                     setLocationToConfirm={setLocationToConfirm}
                     isReverseGeocoding={isReverseGeocoding}
