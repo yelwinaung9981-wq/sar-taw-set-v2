@@ -2,12 +2,11 @@ import express from "express";
 import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
-  // Body parser to accept JSON payloads (Vercel automatically parses bodies, so we skip if already an object)
-  app.use((req, res, next) => {
+// Body parser to accept JSON payloads (Vercel automatically parses bodies, so we skip if already an object)
+app.use((req, res, next) => {
     if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
       return next();
     }
@@ -606,32 +605,28 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
 
   // Serve static assets or use Vite dev middleware
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+    import("vite").then(({ createServer: createViteServer }) => {
+      createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      }).then((vite) => {
+        app.use(vite.middlewares);
+        app.listen(PORT, "0.0.0.0", () => {
+          console.log(`Development server running on http://localhost:${PORT}`);
+        });
+      });
     });
-    app.use(vite.middlewares);
   } else if (!process.env.VERCEL) {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*all", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
-  }
 
-  if (!process.env.VERCEL) {
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running securely on port ${PORT}`);
     });
   }
-  
-  return app;
-}
 
-const appPromise = startServer();
-export default async function vercelHandler(req: any, res: any) {
-  const app = await appPromise;
-  app(req, res);
-}
+  export default app;
 
