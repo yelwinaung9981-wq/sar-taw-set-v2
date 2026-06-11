@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "points": { "type": "number" },
+        "lastDeviceId": { "type": "string" },
+        "authCode": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] }
+      },
+      "required": ["uid", "name"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "total": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "uid", "total"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Store product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "mmName": { "type": "string" },
+        "msName": { "type": "string" },
+        "thName": { "type": "string" },
+        "zhName": { "type": "string" },
+        "price": { "type": "number" },
+        "stock": { "type": "number" },
+        "category": { "type": "string" },
+        "image": { "type": "string" },
+        "unit": { "type": "string" },
+        "status": { "type": "string", "enum": ["published", "draft"] }
+      },
+      "required": ["id", "name", "price", "category", "image"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Product category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "key": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "nameMm": { "type": "string" },
+        "nameMs": { "type": "string" },
+        "nameTh": { "type": "string" },
+        "nameZh": { "type": "string" },
+        "order": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "key", "nameEn", "nameMm"]
+    },
+    "Rider": {
+      "title": "Rider",
+      "description": "Delivery Rider account",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "isApproved": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "name"]
+    },
+    "StoreSettings": {
+      "title": "StoreSettings",
+      "description": "Global store settings",
+      "type": "object",
+      "properties": {
+        "productionUrl": { "type": "string" },
+        "telegramToken": { "type": "string" },
+        "telegramChatId": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "logoUrlLight": { "type": "string" },
+        "logoUrlDark": { "type": "string" },
+        "qrCodeLogoUrl": { "type": "string" },
+        "isDeliveryEnabled": { "type": "boolean" },
+        "deliveryFee": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/settings/global": {
+      "schema": { "$ref": "StoreSettings" },
+      "description": "Global application settings"
+    },
+    "/users/{uid}": {
+      "schema": { "$ref": "UserProfile" },
+      "description": "User profiles"
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "Order" },
+      "description": "Orders"
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "Product" },
+      "description": "Store products"
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "Category" },
+      "description": "Product categories"
+    },
+    "/riders/{riderId}": {
+      "schema": { "$ref": "Rider" },
+      "description": "Rider delivery accounts"
+    }
+  }
+}
