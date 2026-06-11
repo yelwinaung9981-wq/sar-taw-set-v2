@@ -87,7 +87,7 @@ app.use((req, res, next) => {
 
   // API Routes FIRST - Securely proxy address search via Google Maps or Gemini
   app.get("/api/config/google-maps-key", (req, res) => {
-    const key = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
+    const key = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
     res.json({ key });
   });
 
@@ -101,7 +101,7 @@ app.use((req, res, next) => {
     const trimmedQuery = query.trim();
 
     // 1. Google Maps Platform (New) Places API - Tier 1 (Highest Fidelity for Shops / Streets / Condos)
-    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
+    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
     if (googleKey && googleKey !== "YOUR_API_KEY") {
       console.log(`[Autocomplete] GOOGLE_MAPS_PLATFORM_KEY is available. querying Google Maps Platform (New) Places API for "${trimmedQuery}"`);
       try {
@@ -414,7 +414,7 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
       return;
     }
 
-    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
+    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
     if (googleKey && googleKey !== "YOUR_API_KEY") {
       try {
         console.log(`[Reverse Geocode] Routing reverse-geocody lookup to Google Maps for lat: ${latitude}, lng: ${longitude}`);
