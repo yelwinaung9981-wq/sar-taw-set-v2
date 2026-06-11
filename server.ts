@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 
 const app = express();
@@ -565,7 +566,6 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
 
       const timestamp = Math.floor(Date.now() / 1000);
       const stringToSign = `public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
-      const crypto = await import("crypto");
       const signature = crypto.createHash('sha1').update(stringToSign).digest('hex');
 
       const url = `https://api.cloudinary.com/v1_1/${activeCloudName}/image/destroy`;
@@ -605,7 +605,8 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
 
   // Serve static assets or use Vite dev middleware
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-    import("vite").then(({ createServer: createViteServer }) => {
+    const viteMod = "vi" + "te";
+    import(viteMod).then(({ createServer: createViteServer }) => {
       createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
