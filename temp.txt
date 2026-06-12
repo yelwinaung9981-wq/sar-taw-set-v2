@@ -1,0 +1,743 @@
+1:import express from "express";
+2:import path from "path";
+3:import crypto from "crypto";
+4:import { GoogleGenAI, Type } from "@google/genai";
+5:
+6:const app = express();
+7:const PORT = 3000;
+8:
+9:// Body parser to accept JSON payloads (Vercel automatically parses bodies, so we skip if already an object)
+10:app.use((req, res, next) => {
+11:    if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+12:      return next();
+13:    }
+14:    express.json()(req, res, next);
+15:  });
+16:
+17:  // Helper function to extract high-fidelity fields from Google Places API (New) components
+18:  function parseGooglePlace(place: any) {
+19:    const name = place.displayName?.text || "";
+20:    const formattedAddress = place.formattedAddress || "";
+21:    const components = place.addressComponents || [];
+22:
+23:    let state = "";
+24:    let city = "";
+25:    let postcode = "";
+26:    let street_address = "";
+27:
+28:    const findComponent = (types: string[]) => {
+29:      return components.find((c: any) => c && Array.isArray(c.types) && c.types.some((t: string) => types.includes(t)))?.longText || "";
+30:    };
+31:
+32:    postcode = findComponent(["postal_code"]);
+33:    state = findComponent(["administrative_area_level_1"]);
+34:
+35:    // Choose city/township
+36:    city = findComponent(["locality"]) || 
+37:           findComponent(["sublocality_level_1"]) || 
+38:           findComponent(["administrative_area_level_2"]) ||
+39:           "Kuala Lumpur";
+40:
+41:    // Build street address from components
+42:    const streetNo = findComponent(["street_number"]);
+43:    const route = findComponent(["route"]);
+44:    const neighborhood = findComponent(["neighborhood"]) || findComponent(["sublocality"]);
+45:
+46:    const parts: string[] = [];
+47:    if (streetNo) parts.push(streetNo);
+48:    if (route) parts.push(route);
+49:    if (neighborhood) parts.push(neighborhood);
+50:
+51:    street_address = parts.join(", ");
+52:
+53:    // If street address is too short, generate from formattedAddress
+54:    if (!street_address || street_address.length < 5) {
+55:      const rawParts = formattedAddress.split(',').map((p: string) => p.trim());
+56:      const filtered = rawParts.filter((p: string) => {
+57:        const l = p.toLowerCase();
+58:        if (l === 'malaysia') return false;
+59:        if (postcode && l.includes(postcode)) return false;
+60:        if (state && (l.includes(state.toLowerCase()) || state.toLowerCase().includes(l))) return false;
+61:        if (city && (l.includes(city.toLowerCase()) || city.toLowerCase().includes(l))) return false;
+62:        if (name && (l.includes(name.toLowerCase()) || name.toLowerCase().includes(l))) return false;
+63:        return true;
+64:      });
+65:      street_address = filtered.join(', ');
+66:    }
+67:
+68:    // Default fallback to stripped address
+69:    if (!street_address) {
+70:      street_address = formattedAddress.replace(/,\s*Malaysia$/i, "");
+71:    }
+72:
+73:    const latitude = place.location?.latitude || 3.1390;
+74:    const longitude = place.location?.longitude || 101.6869;
+75:
+76:    return {
+77:      building_name: name || "N/A",
+78:      street_address: street_address,
+79:      postcode: postcode || "50000",
+80:      city: city,
+81:      state: state,
+82:      country: "Malaysia",
+83:      latitude: latitude,
+84:      longitude: longitude
+85:    };
+86:  }
+87:
+88:  // API Routes FIRST - Securely proxy address search via Google Maps or Gemini
+89:  app.get("/api/config/google-maps-key", (req, res) => {
+90:    const key = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
+91:    res.json({ key });
+92:  });
+93:
+94:  app.get("/api/config/mapbox-token", (req, res) => {
+95:    const token = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN || "";
+96:    res.json({ token });
+97:  });
+98:
+99:  app.post("/api/gemini/autocomplete-address", async (req, res) => {
+100:    const { query } = req.body;
+101:    if (!query || typeof query !== 'string' || !query.trim()) {
+102:      res.status(400).json({ error: "Search query is required." });
+103:      return;
+104:    }
+105:
+106:    const trimmedQuery = query.trim();
+107:
+108:    // 1. Google Maps Platform Geocoding API - Tier 1
+109:    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
+110:    if (googleKey && googleKey !== "YOUR_API_KEY") {
+111:      console.log(`[Autocomplete] GOOGLE_MAPS_PLATFORM_KEY is available. querying Google Maps Geocoding API for "${trimmedQuery}"`);
+112:      try {
+113:        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(trimmedQuery + ', Malaysia')}&key=${googleKey}&language=en`;
+114:        const response = await fetch(geocodeUrl, {
+115:          method: "GET",
+116:          headers: {
+117:            ...(req.headers.referer ? { "Referer": req.headers.referer } : {}),
+118:            ...(req.headers.origin ? { "Origin": req.headers.origin } : {})
+119:          }
+120:        });
+121:
+122:        if (response.ok) {
+123:          const data = await response.json();
+124:          if (data && Array.isArray(data.results)) {
+125:            const parsed = data.results.map((result: any) => {
+126:              const components = result.address_components || [];
+127:              const findComponent = (types: string[]) => {
+128:                return components.find((c: any) => c && Array.isArray(c.types) && c.types.some((t: string) => types.includes(t)))?.long_name || "";
+129:              };
+130:              
+131:              const postcode = findComponent(["postal_code"]);
+132:              const state = findComponent(["administrative_area_level_1"]);
+133:              const city = findComponent(["locality"]) || findComponent(["sublocality_level_1"]) || findComponent(["administrative_area_level_2"]);
+134:              
+135:              const streetNo = findComponent(["street_number"]);
+136:              const route = findComponent(["route"]);
+137:              const neighborhood = findComponent(["neighborhood"]) || findComponent(["sublocality"]);
+138:              
+139:              const parts: string[] = [];
+140:              if (streetNo) parts.push(streetNo);
+141:              if (route) parts.push(route);
+142:              if (neighborhood) parts.push(neighborhood);
+143:              let street_address = parts.join(", ");
+144:              
+145:              if (!street_address) {
+146:                street_address = result.formatted_address || "N/A";
+147:              }
+148:              
+149:              const pName = findComponent(["point_of_interest"]) || findComponent(["establishment"]) || street_address;
+150:
+151:              return {
+152:                building_name: pName,
+153:                street_address: street_address,
+154:                postcode: postcode || "50000",
+155:                city: city,
+156:                state: state,
+157:                country: "Malaysia",
+158:                latitude: result.geometry?.location?.lat || 3.1390,
+159:                longitude: result.geometry?.location?.lng || 101.6869
+160:              };
+161:            });
+162:            console.log(`[Autocomplete] Google Geocode API successfully returned ${parsed.length} results.`);
+163:            res.json({ results: parsed, source: "google" });
+164:            return;
+165:          }
+166:        } else {
+167:          const errText = await response.text();
+168:          console.warn("[Autocomplete] Google Geocode API HTTP fallback error:", response.status, errText);
+169:        }
+170:      } catch (err) {
+171:        console.error("[Autocomplete] Google Geocode API fetch error:", err);
+172:      }
+173:    }
+174:
+175:    // 2. Mapbox Search API - Tier 2
+176:    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN || "";
+177:    if (mapboxToken && mapboxToken !== "YOUR_API_KEY") {
+178:      try {
+179:        console.log(`[Autocomplete] MAPBOX_ACCESS_TOKEN is available. querying Mapbox Search API for "${trimmedQuery}"`);
+180:        const searchURL = new URL(`https://api.mapbox.com/search/geocode/v6/forward`);
+181:        searchURL.searchParams.append("q", `${trimmedQuery}, Malaysia`);
+182:        searchURL.searchParams.append("access_token", mapboxToken);
+183:        searchURL.searchParams.append("limit", "5");
+184:        const response = await fetch(searchURL.toString());
+185:        
+186:        if (response.ok) {
+187:          const data = await response.json();
+188:          if (data && Array.isArray(data.features)) {
+189:            const parsed = data.features.map((feature: any) => {
+190:              const context = feature.properties?.context || {};
+191:              const postcode = context.postcode?.name || "50000";
+192:              const city = context.place?.name || context.locality?.name || "Kuala Lumpur";
+193:              const state = context.region?.name || "WP Kuala Lumpur";
+194:              const building = feature.properties?.name || feature.properties?.full_address || "Selected Location";
+195:              const address = feature.properties?.name || feature.properties?.full_address || "";
+196:              
+197:              return {
+198:                building_name: building,
+199:                street_address: address,
+200:                postcode: postcode,
+201:                city: city,
+202:                state: state,
+203:                country: "Malaysia",
+204:                latitude: Number(feature.geometry?.coordinates?.[1] || 3.139),
+205:                longitude: Number(feature.geometry?.coordinates?.[0] || 101.686)
+206:              };
+207:            });
+208:            console.log(`[Autocomplete] Mapbox API successfully returned ${parsed.length} results.`);
+209:            res.json({ results: parsed, source: "mapbox" });
+210:            return;
+211:          }
+212:        } else {
+213:          const errText = await response.text();
+214:          console.warn("[Autocomplete] Mapbox HTTP fallback error:", response.status, errText);
+215:        }
+216:      } catch (err) {
+217:        console.error("[Autocomplete] Mapbox API fetch error:", err);
+218:      }
+219:    }
+220:
+221:    // 3. Gemini AI Grounding Search - Tier 3
+222:    const apiKey = process.env.GEMINI_API_KEY;
+223:    if (apiKey && apiKey !== "YOUR_API_KEY" && apiKey !== "MY_GEMINI_API_KEY") {
+224:      try {
+225:        const ai = new GoogleGenAI({
+226:          apiKey: apiKey,
+227:          httpOptions: {
+228:            headers: {
+229:              'User-Agent': 'aistudio-build',
+230:            }
+231:          }
+232:        });
+233:
+234:        console.log(`[Autocomplete] Querying Gemini for address search: "${trimmedQuery}"`);
+235:
+236:        const systemInstruction = `You are Malaysia Address Autocomplete System (similar to TikTok Shop).
+237:The user will input an incomplete address, building name, shop name, or landmark in Malaysia.
+238:Your task is to:
+239:1. Search Google to identify the real-life candidates and their precise physical addresses in Malaysia.
+240:2. Return a JSON array of up to 5 matched candidates. Every candidate object in the array MUST strictly have these exact keys and format:
+241:{
+242:  "building_name": "Name of building, condo, mall, landmark, or shop name (leave as empty string or 'N/A' if none)",
+243:  "street_address": "Street address, division, block number, or road name",
+244:  "postcode": "5-digit postal code (postcode)",
+245:  "city": "City/Township in Malaysia (e.g., Petaling Jaya, Shah Alam, Kuala Lumpur)",
+246:  "state": "State in Malaysia (e.g., Selangor, Kuala Lumpur, Johor, Penang, Perak, Sabah, Sarawak, Kedah, Pahang, Kelantan, Terengganu, Melaka, Negeri Sembilan, Perlis, Putrajaya, Labuan)",
+247:  "country": "Malaysia",
+248:  "latitude": 3.1234, // estimated or real latitude coordinate
+249:  "longitude": 101.5678 // estimated or real longitude coordinate
+250:}
+251:Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not write markdown blocks or any conversational talk outside of the JSON wrapper.`;
+252:
+253:        const response = await ai.models.generateContent({
+254:          model: "gemini-2.5-flash",
+255:          contents: `Search and autocomplete this Malaysian query: "${trimmedQuery}"`,
+256:          config: {
+257:            systemInstruction: systemInstruction,
+258:            responseMimeType: "application/json",
+259:            responseSchema: {
+260:              type: Type.ARRAY,
+261:              items: {
+262:                type: Type.OBJECT,
+263:                properties: {
+264:                  building_name: { type: Type.STRING },
+265:                  street_address: { type: Type.STRING },
+266:                  postcode: { type: Type.STRING },
+267:                  city: { type: Type.STRING },
+268:                  state: { type: Type.STRING },
+269:                  country: { type: Type.STRING },
+270:                  latitude: { type: Type.NUMBER },
+271:                  longitude: { type: Type.NUMBER }
+272:                },
+273:                required: ["building_name", "street_address", "postcode", "city", "state", "country", "latitude", "longitude"]
+274:              }
+275:            },
+276:            tools: [{ googleSearch: {} }],
+277:            toolConfig: { includeServerSideToolInvocations: true }
+278:          }
+279:        });
+280:
+281:        const responseText = response.text || "[]";
+282:        console.log("[Autocomplete] Received Raw Response:", responseText);
+283:
+284:        let parsedResults = [];
+285:        try {
+286:          parsedResults = JSON.parse(responseText);
+287:        } catch (parseError) {
+288:          console.error("JSON parsing failed, attempting fallback substring strategy.", parseError);
+289:          const match = responseText.match(/\[[\s\S]*\]/);
+290:          if (match) {
+291:            parsedResults = JSON.parse(match[0]);
+292:          }
+293:        }
+294:
+295:        res.json({ results: parsedResults, source: "gemini" });
+296:        return;
+297:
+298:      } catch (error: any) {
+299:        console.warn("[Autocomplete] Gemini API error, dropping to Mapbox fallback.", error.message || error);
+300:      }
+301:    }
+302:
+303:    // 3. Simple fallback when Google Places is exhausted and Gemini fails
+304:    console.log(`[Autocomplete] Both Google Places API and Gemini failed or keys are missing for query: "${trimmedQuery}"`);
+305:    res.status(500).json({ error: "လိပ်စာ အလိုအလျောက်ရှာဖွေမှု အဆင်မပြေပါ၊ ကျေးဇူးပြု၍ ကိုယ်တိုင်ရိုက်ထည့်ပါ", results: [], source: "error" });
+306:  });
+307:
+308:  // Secure translation proxy endpoint using Gemini API
+309:  app.post("/api/gemini/translate", async (req, res) => {
+310:    const { text } = req.body;
+311:    if (!text || typeof text !== 'string' || !text.trim()) {
+312:      res.status(400).json({ error: "Text to translate is required." });
+313:      return;
+314:    }
+315:
+316:    // High-Fidelity Local Translation dictionary fallback to guarantee success always, even without an active key
+317:    const LOCAL_TRANSLATIONS: Record<string, { mmName: string, thName: string, zhName: string, msName: string }> = {
+318:      apple: { mmName: "ပန်းသီး", thName: "แอปเปิ้ล", zhName: "苹果", msName: "Epal" },
+319:      banana: { mmName: "ငှက်ပျောသီး", thName: "กล้วย", zhName: "香蕉", msName: "Pisang" },
+320:      orange: { mmName: "လိမ္မော်သီး", thName: "ส้ม", zhName: "橙子", msName: "Oren" },
+321:      grape: { mmName: "စပျစ်သီး", thName: "องุ่น", zhName: "葡萄", msName: "Anggur" },
+322:      strawberry: { mmName: "စတော်ဘယ်ရီသီး", thName: "สตรอเบอร์รี่", zhName: "草莓", msName: "Strawberi" },
+323:      mango: { mmName: "သရက်သီး", thName: "มะม่วง", zhName: "芒果", msName: "Mangga" },
+324:      watermelon: { mmName: "ဖရဲသီး", thName: "แตงโม", zhName: "西瓜", msName: "Tembikai" },
+325:      pineapple: { mmName: "နာနတ်သီး", thName: "สับปะรด", zhName: "菠萝", msName: "Nanas" },
+326:      avocado: { mmName: "ထောပတ်သီး", thName: "อะโวคาโด", zhName: "牛油果", msName: "Alpukat" },
+327:      papaya: { mmName: "သင်္ဘောသီး", thName: "มะละกอ", zhName: "木瓜", msName: "Betik" },
+328:      coconut: { mmName: "အုန်းသီး", thName: "มะพร้าว", zhName: "椰子", msName: "Kelapa" },
+329:      lemon: { mmName: "သံပရာသီး", thName: "มะนาว", zhName: "柠檬", msName: "Lemon" },
+330:      lime: { mmName: "သံပရာသီး", thName: "มะนาวแป้น", zhName: "青柠", msName: "Limau Nipis" },
+331:      potato: { mmName: "အာလူး", thName: "มันฝรั่ง", zhName: "土豆", msName: "Kentang" },
+332:      onion: { mmName: "ကြက်သွန်နီ", thName: "หัวหอม", zhName: "洋葱", msName: "Bawang" },
+333:      garlic: { mmName: "ကြက်သွန်ဖြူ", thName: "กระเทียม", zhName: "大蒜", msName: "Bawang Putih" },
+334:      ginger: { mmName: "ဂျင်း", thName: "ขิง", zhName: "生姜", msName: "Halia" },
+335:      tomato: { mmName: "ခရမ်းချဉ်သီး", thName: "มะเขือเทศ", zhName: "番茄", msName: "Tomato" },
+336:      carrot: { mmName: "ကတ်ရတ်", thName: "แครอท", zhName: "胡萝卜", msName: "Lobak Merah" },
+337:      cabbage: { mmName: "ဂေါ်ဖီထုပ်", thName: "กะหล่ำปลี", zhName: "卷心菜", msName: "Kubis" },
+338:      broccoli: { mmName: "ပန်းဂေါ်ဖီစိမ်း", thName: "บล็อคโคลี่", zhName: "西兰花", msName: "Brokoli" },
+339:      spinach: { mmName: "ဟင်းနုနွယ်", thName: "ผักโขม", zhName: "菠菜", msName: "Bayam" },
+340:      cucumber: { mmName: "သခွားသီး", thName: "แตงกวา", zhName: "黄瓜", msName: "Timun" },
+341:      pumpkin: { mmName: "ရွှေဖရုံသီး", thName: "ฟักทอง", zhName: "南瓜", msName: "Labu" },
+342:      corn: { mmName: "ပြောင်းဖူး", thName: "ข้าวโพด", zhName: "玉米", msName: "Jagung" },
+343:      eggplant: { mmName: "ခရမ်းသီး", thName: "มะเขือยาว", zhName: "茄子", msName: "Terong" },
+344:      milk: { mmName: "လတ်ဆတ်သောနို့", thName: "นมสด", zhName: "鲜牛奶", msName: "Susu Segar" },
+345:      yogurt: { mmName: "ဒိန်ချဉ်", thName: "โยเกิร์ต", zhName: "酸奶", msName: "Yogurt" },
+346:      cheese: { mmName: "ဒိန်ခဲ", thName: "ชีส", zhName: "奶酪", msName: "Keju" },
+347:      butter: { mmName: "ထောပတ်", thName: "เนย", zhName: "黄油", msName: "Mentega" },
+348:      egg: { mmName: "ကြက်ဥ", thName: "ไข่ไก่", zhName: "鸡蛋", msName: "Telur" },
+349:      eggs: { mmName: "ကြက်ဥ", thName: "ไข่ไก่", zhName: "鸡蛋", msName: "Telur" },
+350:      chicken: { mmName: "ကြက်သား", thName: "เนื้อไก่", zhName: "鸡肉", msName: "Ayam" },
+351:      pork: { mmName: "ဝက်သား", thName: "เนื้อหมู", zhName: "猪肉", msName: "Daging Babi" },
+352:      beef: { mmName: "အမဲသား", thName: "เนื้อวัว", zhName: "牛肉", msName: "Daging Lembu" },
+353:      mutton: { mmName: "ဆိတ်သား", thName: "เนื้อแพะ", zhName: "羊肉", msName: "Daging Kambing" },
+354:      fish: { mmName: "လတ်ဆတ်သောငါး", thName: "ปลาสด", zhName: "鲜鱼", msName: "Ikan Segar" },
+355:      shrimp: { mmName: "ပုစွန်", thName: "กุ้ง", zhName: "虾", msName: "Udang" },
+356:      crab: { mmName: "ဂဏန်း", thName: "ปู", zhName: "螃蟹", msName: "Ketam" },
+357:      squid: { mmName: "ပြည်ကြီးငါး", thName: "ปลาหมึก", zhName: "鱿鱼", msName: "Sotong" },
+358:      rice: { mmName: "ဆန်", thName: "ข้าวสาร", zhName: "大米", msName: "Beras" },
+359:      bread: { mmName: "ပေါင်မုန့်", thName: "ขนมปัง", zhName: "面包", msName: "Roti" },
+360:      noodle: { mmName: "ခေါက်ဆွဲ", thName: "บะหมี่", zhName: "面条", msName: "Mi" },
+361:      water: { mmName: "သောက်ရေသန့်", thName: "น้ำดื่ม", zhName: "饮用水", msName: "Air Minuman" },
+362:      juice: { mmName: "သစ်သီးဖျော်ရည်", thName: "น้ำผลไม้", zhName: "果汁", msName: "Jus" },
+363:      soda: { mmName: "အချိုရည်", thName: "น้ำอัดลม", zhName: "汽水", msName: "Soda" },
+364:      beer: { mmName: "ဘီယာ", thName: "เบียร์", zhName: "啤酒", msName: "Bir" },
+365:      wine: { mmName: "ဝိုင်", thName: "ไวน์", zhName: "葡萄酒", msName: "Wain" },
+366:      coffee: { mmName: "ကော်ဖီ", thName: "กาแฟ", zhName: "咖啡", msName: "Kopi" },
+367:      tea: { mmName: "လက်ဖက်ရည်", thName: "ชา", zhName: "茶", msName: "Teh" },
+368:      sugar: { mmName: "သကြား", thName: "น้ำตาล", zhName: "糖", msName: "Gula" },
+369:      salt: { mmName: "ဆား", thName: "เกลือ", zhName: "盐", msName: "Garam" },
+370:      oil: { mmName: "ဟင်းချက်ဆီ", thName: "น้ำมันพืช", zhName: "食用油", msName: "Minyak Masak" },
+371:      sauce: { mmName: "ဆော့စ်", thName: "ซอส", zhName: "酱汁", msName: "Sos" },
+372:      pepper: { mmName: "ငရုတ်ကောင်း", thName: "พริกไทย", zhName: "胡椒粉", msName: "Lada" },
+373:      chili: { mmName: "ငရုတ်သီး", thName: "พริก", zhName: "辣椒", msName: "Cili" },
+374:      soap: { mmName: "ဆပ်ပြာ", thName: "สบู่", zhName: "肥皂", msName: "Sabun" },
+375:      shampoo: { mmName: "ခေါင်းလျှော်ရည်", thName: "ยาสระผม", zhName: "洗发水", msName: "Syampu" },
+376:      toothpaste: { mmName: "သွားတိုက်ဆေး", thName: "ยาสีฟัน", zhName: "牙膏", msName: "Ubat Gigi" },
+377:      snack: { mmName: "မုန့်ပဲသွားရည်စာ", thName: "ขนมขบเคี้ยว", zhName: "零食", msName: "Snek" },
+378:      chocolate: { mmName: "ချောကလက်", thName: "ช็อกโกแลต", zhName: "巧克力", msName: "Coklat" },
+379:      biscuit: { mmName: "ဘီစကွတ်", thName: "บิสกิต", zhName: "饼干", msName: "Biskut" },
+380:      honey: { mmName: "ပျားရည်", thName: "น้ำผึ้ง", zhName: "蜂蜜", msName: "Madu" },
+381:      meat: { mmName: "အသား", thName: "เนื้อสัตว์", zhName: "肉类", msName: "Daging" },
+382:    };
+383:
+384:    const getLocalFallback = (inputText: string) => {
+385:      const normalized = inputText.toLowerCase().trim();
+386:      
+387:      // 1. Direct match
+388:      if (LOCAL_TRANSLATIONS[normalized]) {
+389:        return LOCAL_TRANSLATIONS[normalized];
+390:      }
+391:      
+392:      // 2. Token/partial match (split words and find key elements)
+393:      const tokens = normalized.split(/\s+/);
+394:      for (const token of tokens) {
+395:        if (LOCAL_TRANSLATIONS[token] && token.length > 2) {
+396:          const match = LOCAL_TRANSLATIONS[token];
+397:          const isOrganic = normalized.includes("organic");
+398:          const isPremium = normalized.includes("premium");
+399:          
+400:          const prefixMM = isOrganic ? "အော်ဂဲနစ် " : isPremium ? "ပရီမီယံ " : "";
+401:          const prefixTH = isOrganic ? "ออร์แกนิก " : isPremium ? "พรีเมียม " : "";
+402:          const prefixZH = isOrganic ? "有机" : isPremium ? "优质" : "";
+403:          const prefixMS = isOrganic ? "Organik " : isPremium ? "Premium " : "";
+404:
+405:          return {
+406:            mmName: prefixMM + match.mmName,
+407:            thName: prefixTH + match.thName,
+408:            zhName: prefixZH + match.zhName,
+409:            msName: prefixMS + match.msName
+410:          };
+411:        }
+412:      }
+413:
+414:      // Generic default
+415:      return {
+416:        mmName: inputText,
+417:        thName: inputText,
+418:        zhName: inputText,
+419:        msName: inputText
+420:      };
+421:    };
+422:
+423:    const fallbackResult = getLocalFallback(text);
+424:    const apiKey = process.env.GEMINI_API_KEY;
+425:
+426:    if (!apiKey || apiKey === "YOUR_API_KEY" || apiKey === "MY_GEMINI_API_KEY") {
+427:      console.log(`[Translate] No API key, serving local dictionary fallback for: "${text}"`);
+428:      res.json({
+429:        ...fallbackResult,
+430:        warning: "Translation API Key not configured. Using intelligent dictionary lookup."
+431:      });
+432:      return;
+433:    }
+434:
+435:    try {
+436:      const ai = new GoogleGenAI({
+437:        apiKey: apiKey,
+438:        httpOptions: {
+439:          headers: {
+440:            'User-Agent': 'aistudio-build',
+441:          }
+442:        }
+443:      });
+444:
+445:      console.log(`[Translate] Requesting Gemini translation for: "${text}"`);
+446:      const response = await ai.models.generateContent({
+447:        model: "gemini-2.5-flash",
+448:        contents: `Translate the following grocery/supermarket product name into Myanmar (Burmese), Thai, Chinese (Simplified/Universal), and Malay. 
+449:        Return the result as a detailed JSON object with keys: mmName, thName, zhName, msName.
+450:        Do not output any markdown blocks or formatting outside of raw JSON.
+451:        Product Name: ${text.trim()}`,
+452:        config: {
+453:          responseMimeType: "application/json",
+454:          responseSchema: {
+455:            type: Type.OBJECT,
+456:            properties: {
+457:              mmName: { type: Type.STRING, description: "Myanmar (Burmese) translation" },
+458:              thName: { type: Type.STRING, description: "Thai translation" },
+459:              zhName: { type: Type.STRING, description: "Chinese Simplified translation" },
+460:              msName: { type: Type.STRING, description: "Malay translation" },
+461:            },
+462:            required: ["mmName", "thName", "zhName", "msName"],
+463:          },
+464:        },
+465:      });
+466:
+467:      const responseText = response.text;
+468:      if (!responseText) {
+469:        throw new Error("No response text from Gemini API.");
+470:      }
+471:
+472:      console.log("[Translate] Success:", responseText);
+473:      res.json(JSON.parse(responseText));
+474:    } catch (error: any) {
+475:      console.error("[Translate Exception]:", error);
+476:      // Serve direct high-fidelity fallback on model error or quota block
+477:      res.json({
+478:        ...fallbackResult,
+479:        warning: "Gemini server failed. Using dictionary backup."
+480:      });
+481:    }
+482:  });
+483:
+484:  // Highlighted Addition: API Route for reverse-geocoding of raw GPS coordinates to resolve accurate address fields
+485:  app.post("/api/google/reverse-geocode", async (req, res) => {
+486:    const { latitude, longitude } = req.body;
+487:    if (latitude === undefined || longitude === undefined) {
+488:      res.status(400).json({ error: "Missing latitude and longitude in body." });
+489:      return;
+490:    }
+491:
+492:    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
+493:    if (googleKey && googleKey !== "YOUR_API_KEY") {
+494:      try {
+495:        console.log(`[Reverse Geocode] Routing reverse-geocody lookup to Google Maps for lat: ${latitude}, lng: ${longitude}`);
+496:        const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${googleKey}&language=en`, {
+497:          headers: {
+498:            ...(req.headers.referer ? { "Referer": req.headers.referer } : {}),
+499:            ...(req.headers.origin ? { "Origin": req.headers.origin } : {})
+500:          }
+501:        });
+502:        if (response.ok) {
+503:          const data = await response.json();
+504:          if (data && Array.isArray(data.results) && data.results.length > 0) {
+505:            const firstResult = data.results[0];
+506:            const formattedAddress = firstResult.formatted_address || "";
+507:            const components = firstResult.address_components || [];
+508:
+509:            let state = "";
+510:            let city = "";
+511:            let postcode = "";
+512:            let street_address = "";
+513:
+514:            const findComponent = (types: string[]) => {
+515:              return components.find((c: any) => c && Array.isArray(c.types) && c.types.some((t: string) => types.includes(t)))?.long_name || "";
+516:            };
+517:
+518:            postcode = findComponent(["postal_code"]);
+519:            state = findComponent(["administrative_area_level_1"]);
+520:            city = findComponent(["locality"]) || findComponent(["sublocality_level_1"]) || findComponent(["administrative_area_level_2"]);
+521:
+522:            const streetNo = findComponent(["street_number"]);
+523:            const route = findComponent(["route"]);
+524:            const neighborhood = findComponent(["neighborhood"]) || findComponent(["sublocality"]);
+525:
+526:            const parts: string[] = [];
+527:            if (streetNo) parts.push(streetNo);
+528:            if (route) parts.push(route);
+529:            if (neighborhood) parts.push(neighborhood);
+530:
+531:            street_address = parts.join(", ");
+532:
+533:            if (!street_address || street_address.length < 5) {
+534:              const rawParts = formattedAddress.split(',').map((p: string) => p.trim());
+535:              const filtered = rawParts.filter((p: string) => {
+536:                const l = p.toLowerCase();
+537:                if (l === 'malaysia') return false;
+538:                if (postcode && l.includes(postcode)) return false;
+539:                if (state && (l.includes(state.toLowerCase()) || state.toLowerCase().includes(l))) return false;
+540:                if (city && (l.includes(city.toLowerCase()) || city.toLowerCase().includes(l))) return false;
+541:                return true;
+542:              });
+543:              street_address = filtered.join(', ');
+544:            }
+545:
+546:            if (!street_address) {
+547:              street_address = formattedAddress.replace(/,\s*Malaysia$/i, "");
+548:            }
+549:
+550:            res.json({
+551:              building_name: "Selected Location",
+552:              street_address: street_address,
+553:              postcode: postcode || "50000",
+554:              city: city || "Kuala Lumpur",
+555:              state: state || "WP Kuala Lumpur",
+556:              country: "Malaysia",
+557:              latitude: Number(latitude),
+558:              longitude: Number(longitude)
+559:            });
+560:            return;
+561:          }
+562:        }
+563:      } catch (err) {
+564:        console.error("[Reverse Geocode Error] Google Maps API endpoint failure:", err);
+565:      }
+566:    }
+567:
+568:    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN || "";
+569:    if (mapboxToken && mapboxToken !== "YOUR_API_KEY") {
+570:      try {
+571:        console.log(`[Reverse Geocode] Routing reverse-geocody lookup to Mapbox for lat: ${latitude}, lng: ${longitude}`);
+572:        const response = await fetch(`https://api.mapbox.com/search/geocode/v6/reverse?longitude=${longitude}&latitude=${latitude}&access_token=${mapboxToken}`);
+573:        if (response.ok) {
+574:          const data = await response.json();
+575:          if (data && Array.isArray(data.features) && data.features.length > 0) {
+576:            const firstResult = data.features[0];
+577:            const context = firstResult.properties?.context || {};
+578:            
+579:            const postcode = context.postcode?.name || "50000";
+580:            const city = context.place?.name || context.locality?.name || "Kuala Lumpur";
+581:            const state = context.region?.name || "WP Kuala Lumpur";
+582:            const building = firstResult.properties?.name || firstResult.properties?.full_address || "Selected Location";
+583:            const address = firstResult.properties?.name || firstResult.properties?.full_address || "";
+584:            
+585:            res.json({
+586:              building_name: building,
+587:              street_address: address,
+588:              postcode: postcode,
+589:              city: city,
+590:              state: state,
+591:              country: "Malaysia",
+592:              latitude: Number(latitude),
+593:              longitude: Number(longitude)
+594:            });
+595:            return;
+596:          }
+597:        }
+598:      } catch (err) {
+599:        console.error("[Reverse Geocode Error] Mapbox API endpoint failure:", err);
+600:      }
+601:    }
+602:
+603:    // Standard hardcoded smart coordinate euclidean hubs mapping fallback as final tier
+604:    const hubs = [
+605:      { state: "WP Kuala Lumpur", city: "Kuala Lumpur", postcode: "50000", lat: 3.139, lng: 101.686 },
+606:      { state: "Selangor", city: "Petaling Jaya", postcode: "46000", lat: 3.107, lng: 101.606 },
+607:      { state: "Johor", city: "Johor Bahru", postcode: "80000", lat: 1.492, lng: 103.741 },
+608:      { state: "Penang", city: "George Town", postcode: "10000", lat: 5.414, lng: 100.329 },
+609:      { state: "Sabah", city: "Kota Kinabalu", postcode: "88000", lat: 5.978, lng: 116.075 },
+610:      { state: "Sarawak", city: "Kuching", postcode: "93000", lat: 1.553, lng: 110.359 }
+611:    ];
+612:
+613:    let matchedHub = hubs[0];
+614:    let minDistance = Infinity;
+615:
+616:    hubs.forEach((h) => {
+617:      const distance = Math.sqrt(Math.pow(latitude - h.lat, 2) + Math.pow(longitude - h.lng, 2));
+618:      if (distance < minDistance) {
+619:        minDistance = distance;
+620:        matchedHub = h;
+621:      }
+622:    });
+623:
+624:    res.json({
+625:      building_name: "Selected Location",
+626:      street_address: "Jalan Utama",
+627:      postcode: matchedHub.postcode,
+628:      city: matchedHub.city,
+629:      state: matchedHub.state,
+630:      country: "Malaysia",
+631:      latitude: Number(latitude),
+632:      longitude: Number(longitude)
+633:    });
+634:  });
+635:
+636:  // API route to securely delete a Cloudinary asset if API Key and Secret are configured
+637:  app.post("/api/cloudinary/delete", async (req, res) => {
+638:    let { publicId, imageUrl, cloudName, apiKey: bodyApiKey, apiSecret: bodyApiSecret } = req.body;
+639:
+640:    const apiKey = bodyApiKey || process.env.CLOUDINARY_API_KEY;
+641:    const apiSecret = bodyApiSecret || process.env.CLOUDINARY_API_SECRET;
+642:    const defaultCloudName = process.env.VITE_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME;
+643:    const activeCloudName = cloudName || defaultCloudName;
+644:
+645:    if (!apiKey || !apiSecret || !activeCloudName) {
+646:      console.warn("[Cloudinary Delete] Server-side Cloudinary credentials are not fully configured. Skipping actual Cloudinary asset deletion.");
+647:      res.status(200).json({ 
+648:        success: false, 
+649:        message: "Cloudinary credentials (CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET, or Cloud Name) are not configured." 
+650:      });
+651:      return;
+652:    }
+653:
+654:    try {
+655:      // If publicId was not supplied but imageUrl was, try to parse publicId from URL
+656:      if (!publicId && imageUrl) {
+657:        console.log(`[Cloudinary Delete] Parsing public ID from url: ${imageUrl}`);
+658:        const parts = imageUrl.split('/image/upload/');
+659:        if (parts.length >= 2) {
+660:          let pathAndId = parts[1];
+661:          if (pathAndId.match(/^v\d+\//)) {
+662:            pathAndId = pathAndId.replace(/^v\d+\//, '');
+663:          }
+664:          const dotIndex = pathAndId.lastIndexOf('.');
+665:          if (dotIndex !== -1) {
+666:            pathAndId = pathAndId.substring(0, dotIndex);
+667:          }
+668:          publicId = pathAndId;
+669:        }
+670:      }
+671:
+672:      if (!publicId) {
+673:        res.status(400).json({ error: "Missing publicId or parseable imageUrl in body." });
+674:        return;
+675:      }
+676:
+677:      const timestamp = Math.floor(Date.now() / 1000);
+678:      const stringToSign = `public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
+679:      const signature = crypto.createHash('sha1').update(stringToSign).digest('hex');
+680:
+681:      const url = `https://api.cloudinary.com/v1_1/${activeCloudName}/image/destroy`;
+682:      
+683:      console.log(`[Cloudinary Delete] Requesting asset destruction for publicId: "${publicId}" in cloud: "${activeCloudName}"`);
+684:      
+685:      const response = await fetch(url, {
+686:        method: "POST",
+687:        headers: {
+688:          "Content-Type": "application/json"
+689:        },
+690:        body: JSON.stringify({
+691:          public_id: publicId,
+692:          api_key: apiKey,
+693:          timestamp: timestamp,
+694:          signature: signature
+695:        })
+696:      });
+697:
+698:      if (!response.ok) {
+699:        const errorText = await response.text();
+700:        throw new Error(`Cloudinary Destroy API returned HTTP ${response.status}: ${errorText}`);
+701:      }
+702:
+703:      const responseData = await response.json();
+704:      console.log("[Cloudinary Delete] Destroy response received:", responseData);
+705:      
+706:      res.json({
+707:        success: true,
+708:        data: responseData
+709:      });
+710:    } catch (destroyError: any) {
+711:      console.error("[Cloudinary Delete Exception]:", destroyError);
+712:      res.status(500).json({ error: destroyError.message || "Failed to delete asset from Cloudinary" });
+713:    }
+714:  });
+715:
+716:  // Serve static assets or use Vite dev middleware
+717:  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+718:    const viteMod = "vi" + "te";
+719:    import(viteMod).then(({ createServer: createViteServer }) => {
+720:      createViteServer({
+721:        server: { middlewareMode: true },
+722:        appType: "spa",
+723:      }).then((vite) => {
+724:        app.use(vite.middlewares);
+725:        app.listen(PORT, "0.0.0.0", () => {
+726:          console.log(`Development server running on http://localhost:${PORT}`);
+727:        });
+728:      });
+729:    });
+730:  } else if (!process.env.VERCEL) {
+731:    const distPath = path.join(process.cwd(), "dist");
+732:    app.use(express.static(distPath));
+733:    app.get("*all", (req, res) => {
+734:      res.sendFile(path.join(distPath, "index.html"));
+735:    });
+736:
+737:    app.listen(PORT, "0.0.0.0", () => {
+738:      console.log(`Server running securely on port ${PORT}`);
+739:    });
+740:  }
+741:
+742:  export default app;
+743:

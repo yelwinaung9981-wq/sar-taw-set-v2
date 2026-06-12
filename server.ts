@@ -105,46 +105,76 @@ app.use((req, res, next) => {
 
     const trimmedQuery = query.trim();
 
-    // 1. Google Maps Platform (New) Places API - Tier 1 (Highest Fidelity for Shops / Streets / Condos)
+    // 1. Google Maps Platform Geocoding API - Tier 1
     const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
     if (googleKey && googleKey !== "YOUR_API_KEY") {
-      console.log(`[Autocomplete] GOOGLE_MAPS_PLATFORM_KEY is available. querying Google Maps Platform (New) Places API for "${trimmedQuery}"`);
+      console.log(`[Autocomplete] GOOGLE_MAPS_PLATFORM_KEY is available. querying Google Maps Geocoding API for "${trimmedQuery}"`);
       try {
-        const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
-          method: "POST",
+        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(trimmedQuery + ', Malaysia')}&key=${googleKey}&language=en`;
+        const response = await fetch(geocodeUrl, {
+          method: "GET",
           headers: {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": googleKey,
-            "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.types,places.location",
             ...(req.headers.referer ? { "Referer": req.headers.referer } : {}),
             ...(req.headers.origin ? { "Origin": req.headers.origin } : {})
-          },
-          body: JSON.stringify({
-            textQuery: `${trimmedQuery}, Malaysia`,
-            languageCode: "en",
-            locationRestriction: {
-              rectangle: {
-                low: { latitude: 0.8, longitude: 99.5 },
-                high: { latitude: 7.4, longitude: 119.3 }
-              }
-            }
-          })
+          }
         });
 
         if (response.ok) {
           const data = await response.json();
-          if (data && Array.isArray(data.places)) {
-            const parsed = data.places.map((place: any) => parseGooglePlace(place));
-            console.log(`[Autocomplete] Google Places API successfully returned ${parsed.length} results.`);
-            res.json({ results: parsed, source: "google" });
-            return;
+          if (data && Array.isArray(data.results)) {
+            const parsed = data.results.map((result: any) => {
+              const components = result.address_components || [];
+              const findComponent = (types: string[]) => {
+                return components.find((c: any) => c && Array.isArray(c.types) && c.types.some((t: string) => types.includes(t)))?.long_name || "";
+              };
+              
+              const postcode = findComponent(["postal_code"]);
+              const state = findComponent(["administrative_area_level_1"]);
+              const city = findComponent(["locality"]) || findComponent(["sublocality_level_1"]) || findComponent(["administrative_area_level_2"]);
+              
+              const streetNo = findComponent(["street_number"]);
+              const route = findComponent(["route"]);
+              const neighborhood = findComponent(["neighborhood"]) || findComponent(["sublocality"]);
+              
+              const parts: string[] = [];
+              if (streetNo) parts.push(streetNo);
+              if (route) parts.push(route);
+              if (neighborhood) parts.push(neighborhood);
+              let street_address = parts.join(", ");
+              
+              if (!street_address) {
+                street_address = result.formatted_address || "N/A";
+              }
+              
+              const pName = findComponent(["point_of_interest"]) || findComponent(["establishment"]) || street_address;
+
+              return {
+                building_name: pName,
+                street_address: street_address,
+                postcode: postcode || "50000",
+                city: city,
+                state: state,
+                country: "Malaysia",
+                latitude: result.geometry?.location?.lat || 3.1390,
+                longitude: result.geometry?.location?.lng || 101.6869
+              };
+            });
+            if (parsed.length > 0) {
+              console.log(`[Autocomplete] Google Geocode API successfully returned ${parsed.length} results.`);
+              res.json({ results: parsed, source: "google" });
+              return;
+            } else {
+              console.log(`[Autocomplete] Google Geocode API returned 0 results, falling through to Mapbox API...`);
+            }
+          } else if (data && data.status && data.status !== 'OK') {
+             console.warn(`[Autocomplete] Google Geocode API returned status: ${data.status}`);
           }
         } else {
           const errText = await response.text();
-          console.warn("[Autocomplete] Google Places API HTTP fallback error:", response.status, errText);
+          console.warn("[Autocomplete] Google Geocode API HTTP fallback error:", response.status, errText);
         }
       } catch (err) {
-        console.error("[Autocomplete] Google Places API fetch error:", err);
+        console.error("[Autocomplete] Google Geocode API fetch error:", err);
       }
     }
 
@@ -181,9 +211,13 @@ app.use((req, res, next) => {
                 longitude: Number(feature.geometry?.coordinates?.[0] || 101.686)
               };
             });
-            console.log(`[Autocomplete] Mapbox API successfully returned ${parsed.length} results.`);
-            res.json({ results: parsed, source: "mapbox" });
-            return;
+            if (parsed.length > 0) {
+              console.log(`[Autocomplete] Mapbox API successfully returned ${parsed.length} results.`);
+              res.json({ results: parsed, source: "mapbox" });
+              return;
+            } else {
+              console.log(`[Autocomplete] Mapbox API returned 0 results, falling through to Gemini API...`);
+            }
           }
         } else {
           const errText = await response.text();
