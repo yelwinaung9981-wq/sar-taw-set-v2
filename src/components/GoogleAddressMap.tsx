@@ -188,7 +188,7 @@ export const GoogleAddressMap: React.FC<GoogleAddressMapProps> = ({
 
   useEffect(() => {
     // Check locally first
-    const localKey = (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY;
+    const localKey = (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY || (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY;
     if (localKey && localKey !== 'YOUR_API_KEY' && localKey !== 'MY_GOOGLE_MAPS_PLATFORM_KEY') {
        setApiKey(localKey);
        setIsLoadingKey(false);
