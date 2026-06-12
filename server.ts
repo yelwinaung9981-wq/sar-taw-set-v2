@@ -265,26 +265,7 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
           contents: `Search and autocomplete this Malaysian query: "${trimmedQuery}"`,
           config: {
             systemInstruction: systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  building_name: { type: Type.STRING },
-                  street_address: { type: Type.STRING },
-                  postcode: { type: Type.STRING },
-                  city: { type: Type.STRING },
-                  state: { type: Type.STRING },
-                  country: { type: Type.STRING },
-                  latitude: { type: Type.NUMBER },
-                  longitude: { type: Type.NUMBER }
-                },
-                required: ["building_name", "street_address", "postcode", "city", "state", "country", "latitude", "longitude"]
-              }
-            },
-            tools: [{ googleSearch: {} }],
-            toolConfig: { includeServerSideToolInvocations: true }
+            tools: [{ googleSearch: {} }]
           }
         });
 
