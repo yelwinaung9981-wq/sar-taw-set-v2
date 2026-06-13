@@ -106,7 +106,7 @@ app.use((req, res, next) => {
     const trimmedQuery = query.trim();
 
     // 1. Google Maps Platform Geocoding API - Tier 1
-    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
+    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY;
     if (googleKey && googleKey !== "YOUR_API_KEY") {
       console.log(`[Autocomplete] GOOGLE_MAPS_PLATFORM_KEY is available. querying Google Maps Geocoding API for "${trimmedQuery}"`);
       try {
@@ -179,7 +179,7 @@ app.use((req, res, next) => {
     }
 
     // 2. Mapbox Search API - Tier 2
-    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN || "";
+    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN;
     if (mapboxToken && mapboxToken !== "YOUR_API_KEY") {
       try {
         console.log(`[Autocomplete] MAPBOX_ACCESS_TOKEN is available. querying Mapbox Search API for "${trimmedQuery}"`);
@@ -480,7 +480,7 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
       return;
     }
 
-    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || "";
+    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY;
     if (googleKey && googleKey !== "YOUR_API_KEY") {
       try {
         console.log(`[Reverse Geocode] Routing reverse-geocody lookup to Google Maps for lat: ${latitude}, lng: ${longitude}`);
@@ -556,7 +556,7 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
       }
     }
 
-    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN || "";
+    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || process.env.VITE_MAPBOX_ACCESS_TOKEN;
     if (mapboxToken && mapboxToken !== "YOUR_API_KEY") {
       try {
         console.log(`[Reverse Geocode] Routing reverse-geocody lookup to Mapbox for lat: ${latitude}, lng: ${longitude}`);
