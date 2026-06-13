@@ -259,9 +259,9 @@ export default function AddressManagementPage() {
                             }
                             s = remainder;
                           }
-                          return r ? `${b}, ${r}, ${s}` : `${b}, ${s}`;
+                          return r ? `${r}, ${b}, ${s}` : `${b}, ${s}`;
                         }
-                        return r ? `${s}, ${r}` : s;
+                        return r ? `${r}, ${s}` : s;
                       })()}, {address.township}, {address.city}, {address.region}
                     </p>
                   </div>
@@ -311,7 +311,7 @@ export default function AddressManagementPage() {
           whileHover={{ scale: 1.05, y: -2 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => navigate('/add-address')}
-          className="px-8 bg-primary text-white py-3.5 rounded-full font-bold text-[11px] shadow-[0_15px_40px_rgba(13,99,27,0.25)] flex items-center justify-center gap-2.5 transition-all hover:bg-primary-container group relative overflow-hidden ring-4 ring-primary/5"
+          className="px-8 bg-primary text-white py-3.5 rounded-xl font-bold text-[11px] shadow-[0_15px_40px_rgba(13,99,27,0.25)] flex items-center justify-center gap-2.5 transition-all hover:bg-primary-container group relative overflow-hidden ring-4 ring-primary/5"
         >
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
           <Plus size={18} className="group-hover:rotate-180 transition-transform duration-500" />
@@ -334,7 +334,7 @@ export default function AddressManagementPage() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className={`relative w-full max-w-sm rounded-[2rem] p-8 overflow-hidden border shadow-2xl ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}
+              className={`relative w-full max-w-sm rounded-[1.25rem] p-8 overflow-hidden border shadow-2xl ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}
             >
               <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-3xl -mr-16 -mt-16" />
               
@@ -353,13 +353,13 @@ export default function AddressManagementPage() {
                 <div className="flex gap-3">
                   <button 
                     onClick={() => setAddressToDelete(null)}
-                    className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                    className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
                   >
                     {t('cancel')}
                   </button>
                   <button 
                     onClick={handleDelete}
-                    className="flex-1 py-4 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-black text-xs uppercase tracking-widest transition-all shadow-[0_10px_20px_rgba(239,68,68,0.2)]"
+                    className="flex-1 py-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black text-xs uppercase tracking-widest transition-all shadow-[0_10px_20px_rgba(239,68,68,0.2)]"
                   >
                     {t('delete')}
                   </button>

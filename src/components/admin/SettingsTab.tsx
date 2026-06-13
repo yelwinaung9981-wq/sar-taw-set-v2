@@ -268,6 +268,34 @@ export function SettingsTab({
     updateSettings({ telegramConfigs: updatedConfigs });
   };
 
+  const testTelegramBot = async (name: string, token: string, chatId: string) => {
+    if (!token || !chatId) {
+      toast.error('Token and Chat ID are required to test');
+      return;
+    }
+    const promise = fetch('/api/telegram/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        chatId,
+        message: `🤖 <b>TELEGRAM NOTIFICATION TEST</b> 🤖\n━━━━━━━━━━━━━━━━━━\nYour Telegram Bot <b>${name || 'Unnamed Bot'}</b> is successfully connected to the Admin Dashboard! 🎉\n\n💬 <b>Chat ID:</b> <code>${chatId}</code>\n🕒 <b>Tested at:</b> ${new Date().toLocaleString()}\n\n<i>🟢 System notifications are active and ready to deliver real-time order alerts!</i>`
+      })
+    }).then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      return data;
+    });
+
+    toast.promise(promise, {
+      loading: `Sending test message via ${name || 'Bot'}...`,
+      success: `Test message sent successfully to chat ID: ${chatId}! Check your Telegram.`,
+      error: (err) => `Failed to send test message: ${err.message || err}`
+    });
+  };
+
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [qrUrl, setQrUrl] = useState(settings.productionUrl);
@@ -475,13 +503,27 @@ export function SettingsTab({
                       }`}
                     />
                   </div>
-                  <button 
-                    onClick={addTelegramBot}
-                    className="w-full py-4 rounded-2xl bg-blue-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-600/20 active:scale-[0.98] transition-all hover:brightness-110 flex items-center justify-center gap-3"
-                  >
-                    <Plus size={18} />
-                    Add Telegram Bot
-                  </button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button 
+                      type="button"
+                      onClick={() => testTelegramBot(newTelegramBot.name, newTelegramBot.token, newTelegramBot.chatId)}
+                      className={`py-4 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 border cursor-pointer ${
+                        darkMode 
+                          ? 'bg-white/5 border-white/10 text-white hover:bg-white/10' 
+                          : 'bg-white border-on-surface/10 text-slate-700 hover:bg-slate-50 shadow-sm'
+                      }`}
+                    >
+                      <Send size={15} />
+                      Test Bot
+                    </button>
+                    <button 
+                      onClick={addTelegramBot}
+                      className="py-4 rounded-2xl bg-blue-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-600/20 active:scale-[0.98] transition-all hover:brightness-110 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Plus size={15} />
+                      Add Bot
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -551,8 +593,15 @@ export function SettingsTab({
                       </div>
                       <div className="flex items-center gap-2">
                         <button 
+                          onClick={() => testTelegramBot(bot.name, bot.token, bot.chatId)}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-indigo-500 bg-indigo-500/5 hover:bg-indigo-500 hover:text-white transition-all cursor-pointer"
+                          title="Send Test Message"
+                        >
+                          <Send size={14} />
+                        </button>
+                        <button 
                           onClick={() => toggleTelegramBot(bot.id)}
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
                             bot.isActive ? 'text-blue-500 bg-blue-500/10' : 'text-on-surface/40 bg-on-surface/5'
                           }`}
                         >
@@ -560,7 +609,7 @@ export function SettingsTab({
                         </button>
                         <button 
                           onClick={() => removeTelegramBot(bot.id)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-all"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-all cursor-pointer"
                         >
                           <XCircle size={14} />
                         </button>

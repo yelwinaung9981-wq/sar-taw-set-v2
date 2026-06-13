@@ -590,7 +590,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   
   useEffect(() => {
     const fetchGlobalSettings = async () => {
-      if (isCacheValid('settings_global', 3600000)) return;
       try {
         const docSnap = await getDoc(doc(db, 'settings', 'global'));
         if (docSnap.exists()) {
@@ -2480,23 +2479,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const sendTelegramNotification = useCallback(async (order: Order) => {
+    const escapeHTML = (text: string) => {
+      if (!text) return '';
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    };
+
+    const cleanCustomerName = escapeHTML(order.customerName);
+    const cleanCustomerPhone = escapeHTML(order.customerPhone);
+    const cleanAddress = escapeHTML(order.address || 'N/A');
+    const cleanPayment = escapeHTML(order.paymentMethod);
+    const cleanTotal = escapeHTML(formatPrice(order.total));
     const itemsList = order.items.map(item => 
-      `▫️ <b>${item.name}</b> (x${item.quantity})`
+      `▫️ <b>${escapeHTML(item.name)}</b> (x${item.quantity})`
     ).join('\n');
 
     const message = `
 <b>🛍 NEW ORDER PLACED 🛍</b>
 ━━━━━━━━━━━━━━━━━━
 <b>🆔 Order ID:</b> <code>${order.id}</code>
-<b>👤 Customer:</b> ${order.customerName}
-<b>📞 Phone:</b> ${order.customerPhone}
-<b>📍 Address:</b> ${order.address || 'N/A'}
+<b>👤 Customer:</b> ${cleanCustomerName}
+<b>📞 Phone:</b> ${cleanCustomerPhone}
+<b>📍 Address:</b> ${cleanAddress}
 
 <b>📦 ITEMS SUMMARY</b>
 ${itemsList}
 
-<b>💰 TOTAL AMOUNT:</b> <b>${formatPrice(order.total)}</b>
-<b>💳 PAYMENT:</b> ${order.paymentMethod}
+<b>💰 TOTAL AMOUNT:</b> <b>${cleanTotal}</b>
+<b>💳 PAYMENT:</b> ${cleanPayment}
 
 ━━━━━━━━━━━━━━━━━━
 🕒 <b>Placed at:</b> ${new Date().toLocaleString()}
@@ -2506,7 +2518,7 @@ ${itemsList}
     // 1. Send via legacy configuration if exists
     if (settings.telegramToken && settings.telegramChatId) {
       try {
-        await fetch('/api/telegram/send', {
+        const res = await fetch('/api/telegram/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2515,8 +2527,12 @@ ${itemsList}
             message: message
           })
         });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.success === false) {
+          console.log('[Telegram Proxy Info]: Legacy notification not completed:', data.error || 'Connection check failed');
+        }
       } catch (error) {
-        console.error('Legacy Telegram Notification Error:', error);
+        console.log('[Telegram Proxy Info]: Legacy Telegram Notification fetch issue:', error);
       }
     }
 
@@ -2526,7 +2542,7 @@ ${itemsList}
       
       for (const config of activeConfigs) {
         try {
-          await fetch('/api/telegram/send', {
+          const res = await fetch('/api/telegram/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2535,8 +2551,12 @@ ${itemsList}
               message: message
             })
           });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data.success === false) {
+            console.log(`[Telegram Proxy Info]: Notification not completed for ${config.name}:`, data.error || 'Connection check failed');
+          }
         } catch (error) {
-          console.error(`Telegram Notification Error for ${config.name}:`, error);
+          console.log(`[Telegram Proxy Info]: Telegram Notification fetch issue for ${config.name}:`, error);
         }
       }
     }

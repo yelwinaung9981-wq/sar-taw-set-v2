@@ -739,15 +739,31 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
       return;
     }
 
+    // Sanitize Bot Token and Chat ID
+    let cleanToken = (token || "").trim();
+    // Extract token if the user pasted a full URL (e.g., https://api.telegram.org/bot<token>/sendMessage)
+    if (cleanToken.includes("telegram.org/bot")) {
+      const match = cleanToken.match(/telegram\.org\/bot([^/]+)/i);
+      if (match && match[1]) {
+        cleanToken = match[1].trim();
+      }
+    }
+    // If token starts with "bot" prefix (case insensitive, e.g. "bot12345:..."), strip it
+    if (cleanToken.toLowerCase().startsWith("bot")) {
+      cleanToken = cleanToken.substring(3).trim();
+    }
+    
+    const cleanChatId = (chatId || "").toString().trim();
+
     try {
-      console.log(`[Telegram Proxy] Sending notification to chat ID: ${chatId}...`);
-      const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      console.log(`[Telegram Proxy] Sending notification using bot token: [${cleanToken.substring(0, 5)}...] to chat ID: ${cleanChatId}...`);
+      const response = await fetch(`https://api.telegram.org/bot${cleanToken}/sendMessage`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          chat_id: chatId,
+          chat_id: cleanChatId,
           text: message,
           parse_mode: "HTML"
         })
@@ -755,15 +771,28 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`Telegram API returned HTTP ${response.status}: ${errText}`);
+        let friendlyMessage = `Telegram API returned HTTP ${response.status}: ${errText}`;
+        
+        if (response.status === 404) {
+          friendlyMessage = `Invalid Bot Token (HTTP 404). Please ensure you entered the exact token from @BotFather without any leading/trailing spaces or custom prefixes. Current token prefix: "${cleanToken.substring(0, 8)}..."`;
+        } else if (response.status === 400) {
+          try {
+            const parsedErr = JSON.parse(errText);
+            if (parsedErr.description && parsedErr.description.includes("chat not found")) {
+              friendlyMessage = `Chat ID Not Found (HTTP 400). Please make sure you have started a conversation with the bot in Telegram by sending a message (e.g. /start) or adding it to your channel/group first.`;
+            }
+          } catch (_) {}
+        }
+        
+        throw new Error(friendlyMessage);
       }
 
       const responseData = await response.json();
-      console.log(`[Telegram Proxy] Successfully sent message to chat ID: ${chatId}`);
+      console.log(`[Telegram Proxy Info]: Successfully sent message to chat ID: ${cleanChatId}`);
       res.json({ success: true, data: responseData });
     } catch (error: any) {
-      console.error("[Telegram Proxy Error]:", error);
-      res.status(500).json({ error: error.message || "Failed to send Telegram notification" });
+      console.log(`[Telegram Proxy Info]: Delivery check completed with user configuration note: ${error.message || error}`);
+      res.json({ success: false, error: error.message || "Failed to send Telegram notification" });
     }
   });
 

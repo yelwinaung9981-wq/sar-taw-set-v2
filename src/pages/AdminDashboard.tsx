@@ -4005,8 +4005,8 @@ function CustomerDetailsView({
                       <p className={`text-[11px] font-semibold ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Recipient: <span className={`font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{addr.name || customer.name}</span></p>
                       <p className={`text-[11px] font-semibold ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Phone: <span className={`font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{addr.phone || customer.phone}</span></p>
                       <p className={`text-[11.5px] font-bold mt-1 leading-normal ${darkMode ? "text-slate-200" : "text-slate-800"}`}>
+                        {addr.room ? `${addr.room}, ` : ""}
                         {addr.building ? `${addr.building}, ` : ""}
-                        {addr.room ? `Room ${addr.room}, ` : ""}
                         {addr.street}, {addr.township}, {addr.city}, {addr.region}
                       </p>
                     </div>

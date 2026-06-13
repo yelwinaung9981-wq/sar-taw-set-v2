@@ -122,9 +122,9 @@ export default function CheckoutPage() {
                 }
                 s = remainder;
               }
-              return r ? `${b}, ${r}, ${s}` : `${b}, ${s}`;
+              return r ? `${r}, ${b}, ${s}` : `${b}, ${s}`;
             }
-            return r ? `${s}, ${r}` : s;
+            return r ? `${r}, ${s}` : s;
           })()}, ${selectedAddress.township}, ${selectedAddress.city}, ${selectedAddress.region}` : undefined,
           paymentMethod: paymentDisplay,
           paymentScreenshot: receiptUrl,
@@ -336,9 +336,9 @@ export default function CheckoutPage() {
                               }
                               s = remainder;
                             }
-                            return r ? `${b}, ${r}, ${s}` : `${b}, ${s}`;
+                            return r ? `${r}, ${b}, ${s}` : `${b}, ${s}`;
                           }
-                          return r ? `${s}, ${r}` : s;
+                          return r ? `${r}, ${s}` : s;
                         })()}, {selectedAddress?.township}, {selectedAddress?.city}, {selectedAddress?.region}
                       </p>
                     </div>

@@ -115,7 +115,7 @@ export default function SuccessPage() {
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className={`p-5 sm:p-7 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.1)] max-w-[360px] w-full relative z-10 border border-on-surface/5 flex flex-col ${darkMode ? 'bg-surface-container-high' : 'bg-white'}`}
+        className={`p-5 sm:p-7 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] max-w-[360px] w-full relative z-10 border border-on-surface/5 flex flex-col ${darkMode ? 'bg-surface-container-high' : 'bg-white'}`}
       >
         {/* Success Icon */}
         <motion.div variants={itemVariants} className="flex justify-center mb-[2vh]">
@@ -171,7 +171,7 @@ export default function SuccessPage() {
         {/* Order Details Card (Receipt Style) */}
         <motion.div 
           variants={itemVariants} 
-          className={`p-5 rounded-[2rem] mb-[2.5vh] border border-on-surface/5 shadow-inner flex-grow flex flex-col justify-center ${darkMode ? 'bg-surface-container-highest' : 'bg-slate-50/80'}`}
+          className={`p-5 rounded-xl mb-[2.5vh] border border-on-surface/5 shadow-inner flex-grow flex flex-col justify-center ${darkMode ? 'bg-surface-container-highest' : 'bg-slate-50/80'}`}
         >
           <div className="flex justify-between items-center mb-4 pb-4 border-b border-dashed border-on-surface/20">
             <div className="flex items-center gap-2">
@@ -182,15 +182,13 @@ export default function SuccessPage() {
           </div>
           
           <div className="space-y-[1.5vh]">
-              <div className="flex justify-between items-center gap-4">
-                <div className="flex items-center gap-2 text-on-surface-variant flex-shrink-0">
+              <div className="flex justify-between items-start gap-4">
+                <div className="flex items-center gap-2 text-on-surface-variant flex-shrink-0 mt-0.5">
                   <Home size={14} />
                   <span className="text-[10px] font-bold">{t('deliveryTo')}</span>
                 </div>
-                <span className="text-[10px] font-black text-on-surface text-right truncate max-w-[120px]">
-                  {order?.address 
-                    ? (order.address.split(',').reverse()[2]?.trim() || order.address.split(',')[3]?.trim()) 
-                    : 'Kuchai Lama'}
+                <span className="text-[10px] font-black text-on-surface text-right break-words max-w-[170px] line-clamp-3">
+                  {order?.address || 'N/A'}
                 </span>
               </div>
               <div className="flex justify-between items-center gap-4">
@@ -241,7 +239,7 @@ export default function SuccessPage() {
         <motion.div variants={itemVariants} className="space-y-2">
           <button 
             onClick={() => navigate('/orders', { state: { from: 'success' } })}
-            className="w-full bg-primary text-white py-3 rounded-2xl font-black text-xs shadow-lg shadow-primary/20 hover:bg-primary-container transition-all active:scale-95 flex items-center justify-center gap-2 group"
+            className="w-full bg-primary text-white py-3 rounded-xl font-black text-xs shadow-lg shadow-primary/20 hover:bg-primary-container transition-all active:scale-95 flex items-center justify-center gap-2 group"
           >
             <FileText size={16} />
             <span className="truncate">{t('trackOrder')}</span>
@@ -251,7 +249,7 @@ export default function SuccessPage() {
           <div className="grid grid-cols-2 gap-2">
             <button 
               onClick={() => navigate('/menu')}
-              className={`text-on-surface border border-on-surface/10 py-2.5 rounded-2xl font-black text-[10px] transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
+              className={`text-on-surface border border-on-surface/10 py-2.5 rounded-xl font-black text-[10px] transition-all active:scale-95 flex items-center justify-center gap-1.5 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
             >
               <ShoppingBag size={14} className="text-primary" />
               <span className="truncate">{t('continueShopping')}</span>
@@ -259,7 +257,7 @@ export default function SuccessPage() {
             <div className="flex gap-1">
               <button 
                 onClick={() => handleShare()}
-                className={`flex-1 text-on-surface border border-on-surface/10 py-2.5 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
+                className={`flex-1 text-on-surface border border-on-surface/10 py-2.5 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 ${darkMode ? 'bg-surface-container-highest hover:bg-surface-container-high' : 'bg-surface-container-low hover:bg-surface-container-high'}`}
                 title="Send via WhatsApp"
               >
                 <MessageCircle size={18} className="text-[#25D366]" />
