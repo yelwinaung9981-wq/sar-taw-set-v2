@@ -80,52 +80,79 @@ export default function MenuPage() {
       return <img src={category.iconUrl} alt="" className="w-3 h-3 object-contain rounded-sm" referrerPolicy="no-referrer" />;
     }
 
-    const key = category?.key || id;
+    const key = (category?.key || id || "").toLowerCase();
+    const nameEn = (category?.nameEn || "").toLowerCase();
+    const nameMm = (category?.nameMm || "");
     const iconSize = 12;
-    switch (key) {
-      case 'all': return <LayoutDashboard size={iconSize} />;
-      case 'deals': return <Zap size={iconSize} className="fill-orange-500 text-orange-500" />;
-      case 'bundles': return <Sparkles size={iconSize} className="text-cyan-500" />;
-      
-      // Core food categories
-      case 'meat': 
-      case 'poultry':
-      case 'meat-poultry': return <Beef size={iconSize} />;
-      case 'seafood': 
-      case 'fish': return <Fish size={iconSize} />;
-      case 'vegetables': 
-      case 'fresh-produce': 
-      case 'fruits': return <Carrot size={iconSize} />;
-      case 'dairy':
-      case 'eggs':
-      case 'dairy-eggs':
-      case 'dairyAndEggs': return <Egg size={iconSize} />;
-      case 'ready-to-eat':
-      case 'readyToEat': 
-      case 'prepared-meals': return <Soup size={iconSize} />;
-      case 'dry-goods':
-      case 'pantry':
-      case 'dryGoods': return <Wheat size={iconSize} />;
-      case 'kitchen': 
-      case 'home-essentials': return <UtensilsCrossed size={iconSize} />;
-      case 'spices': 
-      case 'seasonings': return <Flame size={iconSize} className="text-orange-600" />;
-      case 'beverages': 
-      case 'drinks': return <Wine size={iconSize} />;
-      case 'snacks': 
-      case 'confectionery': return <Candy size={iconSize} />;
-      
-      // Legacy/Misc categories
-      case 'frozen-foods': return <Snowflake size={iconSize} />;
-      case 'baby-care': return <Baby size={iconSize} />;
-      case 'pet-care': return <Dog size={iconSize} />;
-      case 'household': return <Home size={iconSize} />;
-      case 'personal-care': return <Smile size={iconSize} />;
-      case 'health-wellness': return <Pill size={iconSize} />;
-      case 'office-supplies': return <Briefcase size={iconSize} />;
-      
-      default: return <Store size={iconSize} />;
+
+    const isMatch = (...terms: string[]) => {
+      return terms.some(t => {
+        const lowerT = t.toLowerCase();
+        return (
+          key.includes(lowerT) || 
+          nameEn.includes(lowerT) ||
+          (nameMm && nameMm.includes(t))
+        );
+      });
+    };
+
+    if (key === 'all') return <LayoutDashboard size={iconSize} />;
+    if (key === 'deals' || isMatch('deal', 'promo', 'discount', 'အထူး')) return <Zap size={iconSize} className="fill-orange-500 text-orange-500" />;
+    if (key === 'bundles' || isMatch('bundle', 'combo', 'pack', 'set', 'တွဲဖက်', 'စုစည်း')) return <Sparkles size={iconSize} className="text-cyan-500" />;
+
+    if (isMatch('meat', 'poultry', 'pork', 'beef', 'lamb', 'mutton', 'chicken', 'အသား', 'ကြက်', 'ဝက်')) {
+      return <Beef size={iconSize} />;
     }
+    if (isMatch('seafood', 'fish', 'crab', 'shrimp', 'prawn', 'lobster', 'ငါး', 'ပုဇွန်', 'ရေစာ')) {
+      return <Fish size={iconSize} />;
+    }
+    if (isMatch('vegetables', 'fresh-produce', 'fruits', 'fruit', 'vegetable', 'carrot', 'onion', 'garlic', 'သီးနှံ', 'ဟင်းသီးဟင်းရွက်', 'သစ်သီး')) {
+      return <Carrot size={iconSize} />;
+    }
+    if (isMatch('dairy', 'eggs', 'milk', 'cheese', 'butter', 'yogurt', 'cream', 'နို့', 'ဥ')) {
+      return <Egg size={iconSize} />;
+    }
+    if (isMatch('ready-to-eat', 'readyToEat', 'prepared-meals', 'instant', 'soup', 'meal', 'meals', 'စွပ်ပြုတ်', 'အသင့်စား')) {
+      return <Soup size={iconSize} />;
+    }
+    if (isMatch('dry-goods', 'pantry', 'dryGoods', 'rice', 'grains', 'flour', 'spaghetti', 'noodle', 'noodles', 'ဆန်', 'ဂျုံ', 'အခြောက်')) {
+      return <Wheat size={iconSize} />;
+    }
+    if (isMatch('kitchen', 'home-essentials', 'kitchenware', 'utensils', 'utensil', 'plate', 'knife', 'fork', 'cup', 'glass', 'မီးဖိုချောင်')) {
+      return <UtensilsCrossed size={iconSize} />;
+    }
+    if (isMatch('spices', 'seasonings', 'hot', 'chili', 'spicy', 'sauce', 'clove', 'ginger', 'pepper', 'ငရုတ်သီး', 'ဟင်းခတ်')) {
+      return <Flame size={iconSize} className="text-orange-600" />;
+    }
+    if (isMatch('beverages', 'drinks', 'drink', 'juice', 'soda', 'water', 'tea', 'coffee', 'beer', 'wine', 'ဖျော်ရည်', 'ရေသန့်')) {
+      return <Wine size={iconSize} />;
+    }
+    if (isMatch('snacks', 'confectionery', 'sweet', 'sweets', 'dessert', 'desert', 'chocolate', 'biscuit', 'chips', 'cookie', 'cookies', 'မုန့်')) {
+      return <Candy size={iconSize} />;
+    }
+    if (isMatch('frozen-foods', 'frozen', 'ice', 'ice-cream', 'အေးခဲ')) {
+      return <Snowflake size={iconSize} />;
+    }
+    if (isMatch('baby-care', 'baby', 'infant', 'kids', 'diaper', 'diapers', 'ကလေး')) {
+      return <Baby size={iconSize} />;
+    }
+    if (isMatch('pet-care', 'pet', 'cat', 'dog', 'animal', 'pets', 'အိမ်မွေး')) {
+      return <Dog size={iconSize} />;
+    }
+    if (isMatch('household', 'home', 'house', 'cleaning', 'detergent', 'tissue', 'tissues', 'အိမ်သုံး')) {
+      return <Home size={iconSize} />;
+    }
+    if (isMatch('personal-care', 'beauty', 'cosmetics', 'hygiene', 'clean', 'shampoo', 'soap', 'bodywash', 'toothpaste', 'brush', 'ကိုယ်ရေးကိုယ်တာ')) {
+      return <Smile size={iconSize} />;
+    }
+    if (isMatch('health-wellness', 'health', 'medicine', 'supplement', 'vitamins', 'care', 'ဆေး')) {
+      return <Pill size={iconSize} />;
+    }
+    if (isMatch('office-supplies', 'office', 'stationary', 'paper', 'school', 'pen', 'pencil', 'notebook', 'ရုံးသုံး')) {
+      return <Briefcase size={iconSize} />;
+    }
+
+    return <Store size={iconSize} />;
   };
 
   const categoriesWithSpecials = useMemo(() => {

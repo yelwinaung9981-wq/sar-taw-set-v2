@@ -2970,19 +2970,35 @@ function CategoriesTab({
   };
 
   const moveOrder = async (cat: any, direction: 'up' | 'down') => {
-    const sortedCats = [...categories].filter(c => c.id !== 'all').sort((a, b) => a.order - b.order);
+    const sortedCats = [...categories]
+      .filter(c => c.id !== 'all')
+      .sort((a, b) => {
+        if (a.order !== b.order) return a.order - b.order;
+        return (a.nameEn || a.key || '').localeCompare(b.nameEn || b.key || '');
+      });
+      
     const currentIndex = sortedCats.findIndex(c => c.id === cat.id);
-    
+    if (currentIndex === -1) return;
+
+    let targetIndex = currentIndex;
     if (direction === 'up' && currentIndex > 0) {
-      const prevCat = sortedCats[currentIndex - 1];
-      await updateCategory(cat.id, { order: prevCat.order });
-      await updateCategory(prevCat.id, { order: cat.order });
-      toast.success(`Position moved up`);
+      targetIndex = currentIndex - 1;
     } else if (direction === 'down' && currentIndex < sortedCats.length - 1) {
-      const nextCat = sortedCats[currentIndex + 1];
-      await updateCategory(cat.id, { order: nextCat.order });
-      await updateCategory(nextCat.id, { order: cat.order });
-      toast.success(`Position moved down`);
+      targetIndex = currentIndex + 1;
+    }
+
+    if (targetIndex !== currentIndex) {
+      const reorderedList = [...sortedCats];
+      const temp = reorderedList[currentIndex];
+      reorderedList[currentIndex] = reorderedList[targetIndex];
+      reorderedList[targetIndex] = temp;
+
+      // Update order value sequentially to avoid collision and maintain absolute control
+      for (let i = 0; i < reorderedList.length; i++) {
+        const item = reorderedList[i];
+        await updateCategory(item.id, { order: i });
+      }
+      toast.success(`Sequence rearranged successfully`);
     }
   };
 
@@ -3010,52 +3026,79 @@ function CategoriesTab({
       return <img src={category.iconUrl} alt="" className="w-5 h-5 object-contain rounded-md" referrerPolicy="no-referrer" />;
     }
 
-    const key = category.key;
+    const key = (category.key || "").toLowerCase();
+    const nameEn = (category.nameEn || "").toLowerCase();
+    const nameMm = (category.nameMm || "");
     const iconSize = 18;
-    switch (key) {
-      case 'all': return <LayoutDashboard size={iconSize} />;
-      case 'deals': return <Zap size={iconSize} className="fill-orange-500 text-orange-500" />;
-      case 'bundles': return <Sparkles size={iconSize} className="text-cyan-500" />;
-      
-      // Core food categories
-      case 'meat': 
-      case 'poultry':
-      case 'meat-poultry': return <Beef size={iconSize} />;
-      case 'seafood': 
-      case 'fish': return <Fish size={iconSize} />;
-      case 'vegetables': 
-      case 'fresh-produce': 
-      case 'fruits': return <Carrot size={iconSize} />;
-      case 'dairy':
-      case 'eggs':
-      case 'dairy-eggs':
-      case 'dairyAndEggs': return <Egg size={iconSize} />;
-      case 'ready-to-eat':
-      case 'readyToEat': 
-      case 'prepared-meals': return <Soup size={iconSize} />;
-      case 'dry-goods':
-      case 'pantry':
-      case 'dryGoods': return <Wheat size={iconSize} />;
-      case 'kitchen': 
-      case 'home-essentials': return <UtensilsCrossed size={iconSize} />;
-      case 'spices': 
-      case 'seasonings': return <Flame size={iconSize} className="text-orange-600" />;
-      case 'beverages': 
-      case 'drinks': return <Wine size={iconSize} />;
-      case 'snacks': 
-      case 'confectionery': return <Candy size={iconSize} />;
-      
-      // Legacy/Misc categories
-      case 'frozen-foods': return <Snowflake size={iconSize} />;
-      case 'baby-care': return <Baby size={iconSize} />;
-      case 'pet-care': return <Dog size={iconSize} />;
-      case 'household': return <Home size={iconSize} />;
-      case 'personal-care': return <Smile size={iconSize} />;
-      case 'health-wellness': return <Pill size={iconSize} />;
-      case 'office-supplies': return <Briefcase size={iconSize} />;
-      
-      default: return <Store size={iconSize} />;
+
+    const isMatch = (...terms: string[]) => {
+      return terms.some(t => {
+        const lowerT = t.toLowerCase();
+        return (
+          key.includes(lowerT) || 
+          nameEn.includes(lowerT) ||
+          (nameMm && nameMm.includes(t))
+        );
+      });
+    };
+
+    if (key === 'all') return <LayoutDashboard size={iconSize} />;
+    if (key === 'deals' || isMatch('deal', 'promo', 'discount', 'အထူး')) return <Zap size={iconSize} className="fill-orange-500 text-orange-500" />;
+    if (key === 'bundles' || isMatch('bundle', 'combo', 'pack', 'set', 'တွဲဖက်', 'စုစည်း')) return <Sparkles size={iconSize} className="text-cyan-500" />;
+
+    if (isMatch('meat', 'poultry', 'pork', 'beef', 'lamb', 'mutton', 'chicken', 'အသား', 'ကြက်', 'ဝက်')) {
+      return <Beef size={iconSize} />;
     }
+    if (isMatch('seafood', 'fish', 'crab', 'shrimp', 'prawn', 'lobster', 'ငါး', 'ပုဇွန်', 'ရေစာ')) {
+      return <Fish size={iconSize} />;
+    }
+    if (isMatch('vegetables', 'fresh-produce', 'fruits', 'fruit', 'vegetable', 'carrot', 'onion', 'garlic', 'သီးနှံ', 'ဟင်းသီးဟင်းရွက်', 'သစ်သီး')) {
+      return <Carrot size={iconSize} />;
+    }
+    if (isMatch('dairy', 'eggs', 'milk', 'cheese', 'butter', 'yogurt', 'cream', 'နို့', 'ဥ')) {
+      return <Egg size={iconSize} />;
+    }
+    if (isMatch('ready-to-eat', 'readyToEat', 'prepared-meals', 'instant', 'soup', 'meal', 'meals', 'စွပ်ပြုတ်', 'အသင့်စား')) {
+      return <Soup size={iconSize} />;
+    }
+    if (isMatch('dry-goods', 'pantry', 'dryGoods', 'rice', 'grains', 'flour', 'spaghetti', 'noodle', 'noodles', 'ဆန်', 'ဂျုံ', 'အခြောက်')) {
+      return <Wheat size={iconSize} />;
+    }
+    if (isMatch('kitchen', 'home-essentials', 'kitchenware', 'utensils', 'utensil', 'plate', 'knife', 'fork', 'cup', 'glass', 'မီးဖိုချောင်')) {
+      return <UtensilsCrossed size={iconSize} />;
+    }
+    if (isMatch('spices', 'seasonings', 'hot', 'chili', 'spicy', 'sauce', 'clove', 'ginger', 'pepper', 'ငရုတ်သီး', 'ဟင်းခတ်')) {
+      return <Flame size={iconSize} className="text-orange-600" />;
+    }
+    if (isMatch('beverages', 'drinks', 'drink', 'juice', 'soda', 'water', 'tea', 'coffee', 'beer', 'wine', 'ဖျော်ရည်', 'ရေသန့်')) {
+      return <Wine size={iconSize} />;
+    }
+    if (isMatch('snacks', 'confectionery', 'sweet', 'sweets', 'dessert', 'desert', 'chocolate', 'biscuit', 'chips', 'cookie', 'cookies', 'မုန့်')) {
+      return <Candy size={iconSize} />;
+    }
+    if (isMatch('frozen-foods', 'frozen', 'ice', 'ice-cream', 'အေးခဲ')) {
+      return <Snowflake size={iconSize} />;
+    }
+    if (isMatch('baby-care', 'baby', 'infant', 'kids', 'diaper', 'diapers', 'ကလေး')) {
+      return <Baby size={iconSize} />;
+    }
+    if (isMatch('pet-care', 'pet', 'cat', 'dog', 'animal', 'pets', 'အိမ်မွေး')) {
+      return <Dog size={iconSize} />;
+    }
+    if (isMatch('household', 'home', 'house', 'cleaning', 'detergent', 'tissue', 'tissues', 'အိမ်သုံး')) {
+      return <Home size={iconSize} />;
+    }
+    if (isMatch('personal-care', 'beauty', 'cosmetics', 'hygiene', 'clean', 'shampoo', 'soap', 'bodywash', 'toothpaste', 'brush', 'ကိုယ်ရေးကိုယ်တာ')) {
+      return <Smile size={iconSize} />;
+    }
+    if (isMatch('health-wellness', 'health', 'medicine', 'supplement', 'vitamins', 'care', 'ဆေး')) {
+      return <Pill size={iconSize} />;
+    }
+    if (isMatch('office-supplies', 'office', 'stationary', 'paper', 'school', 'pen', 'pencil', 'notebook', 'ရုံးသုံး')) {
+      return <Briefcase size={iconSize} />;
+    }
+
+    return <Store size={iconSize} />;
   };
 
   const stats = [
@@ -3191,7 +3234,24 @@ function CategoriesTab({
                         className={`w-full p-4 rounded-lg border font-black text-xs outline-none transition-all ${darkMode ? "bg-white/5 border-white/10 focus:border-primary" : "bg-white border-gray-200 focus:border-emerald-500"}`}
                         placeholder="Fresh Fruit"
                         value={newCategory.nameEn}
-                        onChange={(e) => setNewCategory({ ...newCategory, nameEn: e.target.value })}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const slug = val.toLowerCase()
+                            .replace(/[^a-z0-9\s-]/g, '')
+                            .trim()
+                            .replace(/\s+/g, '-')
+                            .replace(/-+/g, '-');
+                          
+                          setNewCategory(prev => ({
+                            ...prev,
+                            nameEn: val,
+                            key: editingCategory
+                              ? prev.key
+                              : (!prev.key || prev.key === (prev.nameEn || '').toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-'))
+                                ? slug
+                                : prev.key
+                          }));
+                        }}
                       />
                     </div>
                     <div className="space-y-2">
@@ -3247,6 +3307,22 @@ function CategoriesTab({
                         value={newCategory.iconUrl}
                         onChange={(e) => setNewCategory({ ...newCategory, iconUrl: e.target.value })}
                       />
+                    </div>
+                    <div className="space-y-2 col-span-1 md:col-span-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest opacity-40 ml-2">Auto-Matched Icon Preview</label>
+                      <div className={`p-4 rounded-xl border flex items-center gap-3 transition-colors ${darkMode ? "bg-white/5 border-white/10" : "bg-white border-gray-100 shadow-xs"}`}>
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${darkMode ? "bg-white/5 text-primary border border-white/5" : "bg-emerald-50 text-emerald-600 border border-emerald-100"}`}>
+                          {getCategoryIcon(newCategory)}
+                        </div>
+                        <div>
+                          <p className={`text-xs font-black ${darkMode ? "text-white" : "text-emerald-950"}`}>
+                            {newCategory.nameEn || newCategory.key || "Aesthetic Match Symbol"}
+                          </p>
+                          <p className="text-[9px] opacity-40 font-bold uppercase tracking-wider leading-none mt-1">
+                            {newCategory.iconUrl ? "Custom Image Logo URL override" : "Lucide Autocomplete matched"}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <button
@@ -3315,19 +3391,57 @@ function CategoriesTab({
                       <div className="mt-auto pt-3 flex items-center justify-between border-t border-dashed border-on-surface/5">
                         <div className="flex items-center gap-1.5">
                           <button 
+                            type="button"
                             onClick={() => moveOrder(cat, 'up')}
-                            className={`p-1 rounded bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 transition-colors`}
+                            className={`p-1.5 rounded-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center ${
+                              darkMode ? "bg-white/5 hover:bg-white/10 text-white" : "bg-gray-100 hover:bg-gray-200 text-slate-800"
+                            }`}
+                            title="Move Up"
                           >
-                            <ChevronUp size={12} />
+                            <ChevronUp size={11} className="stroke-[3px]" />
                           </button>
-                          <div className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-tighter ${darkMode ? "bg-white/5 opacity-50" : "bg-gray-50 opacity-60"}`}>
-                            {cat.order}
+                          
+                          <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-wider relative">
+                            <span className="opacity-40">Pos:</span>
+                            <input
+                              type="number"
+                              defaultValue={cat.order}
+                              key={`ord-${cat.id}-${cat.order}`}
+                              onBlur={async (e) => {
+                                const val = parseInt(e.target.value);
+                                if (!isNaN(val) && val !== cat.order) {
+                                  await updateCategory(cat.id, { order: val });
+                                  toast.success(`Updated ordering position to ${val}`);
+                                }
+                              }}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter') {
+                                  const val = parseInt((e.target as HTMLInputElement).value);
+                                  if (!isNaN(val) && val !== cat.order) {
+                                    await updateCategory(cat.id, { order: val });
+                                    toast.success(`Updated ordering position to ${val}`);
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }
+                              }}
+                              className={`w-9 text-center py-0.5 rounded font-black text-[10px] outline-none border transition-all ${
+                                darkMode 
+                                  ? "bg-white/5 border-white/10 focus:bg-white/10 focus:border-primary text-white" 
+                                  : "bg-gray-50 border-gray-200 focus:bg-white focus:border-emerald-500 text-slate-900"
+                              }`}
+                              title="Directly edit sequence order index (lower numbers appear first)"
+                            />
                           </div>
+
                           <button 
+                            type="button"
                             onClick={() => moveOrder(cat, 'down')}
-                            className={`p-1 rounded bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 transition-colors`}
+                            className={`p-1.5 rounded-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center ${
+                              darkMode ? "bg-white/5 hover:bg-white/10 text-white" : "bg-gray-100 hover:bg-gray-200 text-slate-800"
+                            }`}
+                            title="Move Down"
                           >
-                            <ChevronDown size={12} />
+                            <ChevronDown size={11} className="stroke-[3px]" />
                           </button>
                         </div>
                         
