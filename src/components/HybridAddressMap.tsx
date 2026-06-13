@@ -58,14 +58,14 @@ export const HybridAddressMap: React.FC<HybridAddressMapProps> = (props) => {
     );
   }
 
-  // Google Maps is Primary
-  if (googleKey) {
-    return <GoogleAddressMap {...props} />;
-  }
-
-  // Mapbox is Fallback
+  // Mapbox is Primary
   if (mapboxToken) {
     return <MapboxAddressMap {...props} />;
+  }
+
+  // Google Maps is Fallback
+  if (googleKey) {
+    return <GoogleAddressMap {...props} />;
   }
 
   // No maps configured
