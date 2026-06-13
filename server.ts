@@ -125,8 +125,21 @@ app.use((req, res, next) => {
               const postcode = context.postcode?.name || "50000";
               const city = context.place?.name || context.locality?.name || "Kuala Lumpur";
               const state = context.region?.name || "WP Kuala Lumpur";
+              const country = context.country?.name || "Malaysia";
+              
+              let fullAddr = feature.properties?.full_address || feature.properties?.address || "";
+              if (fullAddr) {
+                if (country) fullAddr = fullAddr.replace(new RegExp(`,?\\s*${country}$`, 'i'), '');
+                if (postcode) fullAddr = fullAddr.replace(new RegExp(`,?\\s*${postcode}$`, 'i'), '');
+                if (state && state !== "WP Kuala Lumpur") fullAddr = fullAddr.replace(new RegExp(`,?\\s*${state}$`, 'i'), '');
+                if (city) fullAddr = fullAddr.replace(new RegExp(`,?\\s*${city}$`, 'i'), '');
+                // Try again in case order was different
+                if (postcode) fullAddr = fullAddr.replace(new RegExp(`,?\\s*${postcode}$`, 'i'), '');
+                fullAddr = fullAddr.replace(/,\s*$/, '').trim();
+              }
+              
               const building = feature.properties?.name || "Selected Location";
-              const address = feature.properties?.address || feature.properties?.full_address || "";
+              const address = fullAddr || feature.properties?.address || "";
               
               return {
                 building_name: building,
@@ -495,8 +508,20 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
             const postcode = context.postcode?.name || "50000";
             const city = context.place?.name || context.locality?.name || "Kuala Lumpur";
             const state = context.region?.name || "WP Kuala Lumpur";
+            const country = context.country?.name || "Malaysia";
+            
+            let fullAddr = firstResult.properties?.full_address || firstResult.properties?.address || "";
+            if (fullAddr) {
+              if (country) fullAddr = fullAddr.replace(new RegExp(`,?\\s*${country}$`, 'i'), '');
+              if (postcode) fullAddr = fullAddr.replace(new RegExp(`,?\\s*${postcode}$`, 'i'), '');
+              if (state && state !== "WP Kuala Lumpur") fullAddr = fullAddr.replace(new RegExp(`,?\\s*${state}$`, 'i'), '');
+              if (city) fullAddr = fullAddr.replace(new RegExp(`,?\\s*${city}$`, 'i'), '');
+              if (postcode) fullAddr = fullAddr.replace(new RegExp(`,?\\s*${postcode}$`, 'i'), '');
+              fullAddr = fullAddr.replace(/,\s*$/, '').trim();
+            }
+            
             const building = firstResult.properties?.name || "Selected Location";
-            const address = firstResult.properties?.address || firstResult.properties?.full_address || "";
+            const address = fullAddr || firstResult.properties?.address || "";
             
             res.json({
               building_name: building,

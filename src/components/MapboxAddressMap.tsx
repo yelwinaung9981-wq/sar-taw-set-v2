@@ -91,14 +91,43 @@ export const MapboxAddressMap: React.FC<MapboxAddressMapProps> = ({
       
       setViewState(evt.viewState);
 
-      setTimeout(() => {
+      try {
+        const response = await fetch("/api/google/reverse-geocode", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ latitude: lngLat.latitude, longitude: lngLat.longitude })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setLocationToConfirm((prev: any) => ({
+            ...prev,
+            latitude: lngLat.latitude,
+            longitude: lngLat.longitude,
+            name: data.building_name || prev?.name || "",
+            street: data.street_address || prev?.street || "",
+            city: data.city || prev?.city || "",
+            state: data.state || prev?.state || "",
+            postcode: data.postcode || prev?.postcode || ""
+          }));
+        } else {
+          setLocationToConfirm((prev: any) => prev ? {
+            ...prev,
+            latitude: lngLat.latitude,
+            longitude: lngLat.longitude
+          } : null);
+        }
+      } catch (err) {
         setLocationToConfirm((prev: any) => prev ? {
           ...prev,
           latitude: lngLat.latitude,
           longitude: lngLat.longitude
         } : null);
+      } finally {
         setIsReverseGeocoding(false);
-      }, 500); 
+      }
   };
 
 
