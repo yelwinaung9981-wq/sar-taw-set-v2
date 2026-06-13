@@ -730,6 +730,43 @@ Ensure all keys are populated. Return ONLY a valid JSON array of objects. Do not
     }
   });
 
+  // API route to securely proxy Telegram notifications and bypass client-side connection/CORS limitations/blocks
+  app.post("/api/telegram/send", async (req, res) => {
+    const { token, chatId, message } = req.body;
+    
+    if (!token || !chatId || !message) {
+      res.status(400).json({ error: "Missing token, chatId, or message in request body" });
+      return;
+    }
+
+    try {
+      console.log(`[Telegram Proxy] Sending notification to chat ID: ${chatId}...`);
+      const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+          parse_mode: "HTML"
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Telegram API returned HTTP ${response.status}: ${errText}`);
+      }
+
+      const responseData = await response.json();
+      console.log(`[Telegram Proxy] Successfully sent message to chat ID: ${chatId}`);
+      res.json({ success: true, data: responseData });
+    } catch (error: any) {
+      console.error("[Telegram Proxy Error]:", error);
+      res.status(500).json({ error: error.message || "Failed to send Telegram notification" });
+    }
+  });
+
   // Serve static assets or use Vite dev middleware
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const viteMod = "vi" + "te";

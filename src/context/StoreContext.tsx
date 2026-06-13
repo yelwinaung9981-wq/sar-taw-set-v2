@@ -2506,13 +2506,13 @@ ${itemsList}
     // 1. Send via legacy configuration if exists
     if (settings.telegramToken && settings.telegramChatId) {
       try {
-        await fetch(`https://api.telegram.org/bot${settings.telegramToken}/sendMessage`, {
+        await fetch('/api/telegram/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            chat_id: settings.telegramChatId,
-            text: message,
-            parse_mode: 'HTML'
+            token: settings.telegramToken,
+            chatId: settings.telegramChatId,
+            message: message
           })
         });
       } catch (error) {
@@ -2526,13 +2526,13 @@ ${itemsList}
       
       for (const config of activeConfigs) {
         try {
-          await fetch(`https://api.telegram.org/bot${config.token}/sendMessage`, {
+          await fetch('/api/telegram/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              chat_id: config.chatId,
-              text: message,
-              parse_mode: 'HTML'
+              token: config.token,
+              chatId: config.chatId,
+              message: message
             })
           });
         } catch (error) {
@@ -3609,7 +3609,15 @@ ${itemsList}
         });
       }
 
-      batch.set(doc(addressesRef, addressId), newAddress);
+      // Sanitize undefined fields to prevent crashes on Firestore writes
+      const cleanNewAddress = Object.entries(newAddress).reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as any);
+
+      batch.set(doc(addressesRef, addressId), cleanNewAddress);
       await batch.commit();
       
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressSaved || 'Address saved successfully');
@@ -3666,7 +3674,15 @@ ${itemsList}
         });
       }
       
-      batch.update(doc(addressesRef, id), address);
+      // Sanitize undefined fields to prevent crashes on Firestore update
+      const cleanAddressUpdate = Object.entries(address).reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as any);
+
+      batch.update(doc(addressesRef, id), cleanAddressUpdate);
       await batch.commit();
       
       toast.success(translations[language === 'mm' ? 'mm' : 'en'].addressUpdated || 'Address updated successfully');

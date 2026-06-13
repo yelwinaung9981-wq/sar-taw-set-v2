@@ -1,22 +1,21 @@
-import React, { useEffect, useState, useRef } from 'react';
-import Map, { Marker } from 'react-map-gl/mapbox';
+import React, { useState, useEffect, useRef } from 'react';
+import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { MapPin, AlertTriangle, Navigation } from 'lucide-react';
-import { motion } from 'motion/react';
+import { MapPin, Loader2 } from 'lucide-react';
 
 interface MapboxAddressMapProps {
   locationToConfirm: {
-    name: string;
-    street: string;
-    city: string;
-    state: string;
-    postcode: string;
     latitude: number;
     longitude: number;
-  } | null;
-  setLocationToConfirm: React.Dispatch<React.SetStateAction<any>>;
+    name?: string;
+    street?: string;
+    city?: string;
+    state?: string;
+    postcode?: string;
+  };
+  setLocationToConfirm: React.Dispatch<React.SetStateAction<any | null>>;
   isReverseGeocoding: boolean;
-  setIsReverseGeocoding: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsReverseGeocoding: (val: boolean) => void;
   darkMode: boolean;
   isMm: boolean;
 }
@@ -27,186 +26,193 @@ export const MapboxAddressMap: React.FC<MapboxAddressMapProps> = ({
   isReverseGeocoding,
   setIsReverseGeocoding,
   darkMode,
-  isMm,
+  isMm
 }) => {
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoadingToken, setIsLoadingToken] = useState(true);
-  const mapRef = useRef<any>(null);
-  const initialCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [token, setToken] = useState<string>('');
+  const [loadingToken, setLoadingToken] = useState<boolean>(true);
+  
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<mapboxgl.Map | null>(null);
+  const markerInstance = useRef<mapboxgl.Marker | null>(null);
 
-  const [viewState, setViewState] = useState({
-    longitude: locationToConfirm?.longitude || 101.6869,
-    latitude: locationToConfirm?.latitude || 3.1390,
-    zoom: 15
-  });
-
+  // Fetch Mapbox token from secure backend configuration proxy
   useEffect(() => {
-    if (locationToConfirm && !initialCoordsRef.current) {
-      initialCoordsRef.current = {
-        lat: Number(locationToConfirm.latitude) || 3.1390,
-        lng: Number(locationToConfirm.longitude) || 101.6869
-      };
-    }
-  }, [locationToConfirm]);
-
-  useEffect(() => {
-    if (locationToConfirm && mapRef.current) {
-      const { longitude, latitude } = locationToConfirm;
-      if (longitude && latitude) {
-         setViewState((prev) => ({
-             ...prev,
-             longitude: Number(longitude),
-             latitude: Number(latitude)
-         }));
-      }
-    }
-  }, [locationToConfirm?.latitude, locationToConfirm?.longitude]);
-
-  useEffect(() => {
-    const localKey = (import.meta as any).env?.VITE_MAPBOX_ACCESS_TOKEN;
-    if (localKey && localKey !== 'YOUR_API_KEY') {
-      setToken(localKey);
-      setIsLoadingToken(false);
-      return;
-    }
-
-    fetch('/api/config/mapbox-token')
-      .then((r) => r.json())
-      .then((data) => {
-        const key = data.token;
-        if (key && key !== 'YOUR_API_KEY') {
-          setToken(key);
+    let active = true;
+    const fetchToken = async () => {
+      try {
+        const res = await fetch('/api/config/mapbox-token');
+        if (res.ok) {
+          const data = await res.json();
+          if (active && data.token) {
+            setToken(data.token);
+          }
         }
-      })
-      .catch((err) => {
-         console.log("no backend mapbox config");
-      })
-      .finally(() => setIsLoadingToken(false));
+      } catch (err) {
+        console.error('Error fetching mapbox token:', err);
+      } finally {
+        if (active) {
+          setLoadingToken(false);
+        }
+      }
+    };
+    fetchToken();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const handleDragEnd = async (evt: any) => {
-      const lngLat = evt.viewState;
-      if (!lngLat) return;
-      setIsReverseGeocoding(true);
+  // Initialize Mapbox map instance and register event listeners
+  useEffect(() => {
+    if (loadingToken || !token || !mapContainer.current) return;
+
+    // Set mapbox-gl access token
+    mapboxgl.accessToken = token;
+
+    const initialLng = locationToConfirm.longitude || 101.6869;
+    const initialLat = locationToConfirm.latitude || 3.1390;
+
+    const map = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: darkMode ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/streets-v12',
+      center: [initialLng, initialLat],
+      zoom: 15,
+      attributionControl: false
+    });
+
+    mapInstance.current = map;
+
+    // Add navigation Zoom controls (top right)
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+
+    // Create Pin marker element
+    const el = document.createElement('div');
+    el.className = 'custom-mapbox-pin';
+    el.style.width = '34px';
+    el.style.height = '34px';
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.justifyContent = 'center';
+    
+    const pinColor = darkMode ? '#10b981' : '#368A47';
+    el.innerHTML = `
+      <div style="position: relative; display: flex; flex-col; align-items: center; justify-content: center;">
+        <div style="position: absolute; width: 32px; height: 32px; border-radius: 50%; background: ${pinColor}; opacity: 0.25; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+        <div style="padding: 6px; border-radius: 50%; background: ${darkMode ? '#141617' : '#ffffff'}; border: 2px solid ${pinColor}; box-shadow: 0 4px 6px rgba(0,0,0,0.15); display: flex; justify-content: center; align-items: center; color: ${pinColor}; position: relative; z-index: 10;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
+      </div>
+    `;
+
+    const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([initialLng, initialLat])
+      .addTo(map);
+
+    markerInstance.current = marker;
+
+    // Register Click listener on map to select and geocode addresses
+    map.on('click', async (evt) => {
+      const { lng, lat } = evt.lngLat;
       
-      setViewState(evt.viewState);
+      // Update marker coordinates instantly
+      marker.setLngLat([lng, lat]);
+      map.easeTo({ center: [lng, lat] });
+
+      setIsReverseGeocoding(true);
 
       try {
-        const response = await fetch("/api/google/reverse-geocode", {
-          method: "POST",
+        const response = await fetch('/api/google/reverse-geocode', {
+          method: 'POST',
           headers: {
-            "Content-Type": "application/json"
+            'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ latitude: lngLat.latitude, longitude: lngLat.longitude })
+          body: JSON.stringify({ latitude: lat, longitude: lng })
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           setLocationToConfirm((prev: any) => ({
             ...prev,
-            latitude: lngLat.latitude,
-            longitude: lngLat.longitude,
-            name: data.building_name || prev?.name || "",
-            street: data.street_address || prev?.street || "",
-            city: data.city || prev?.city || "",
-            state: data.state || prev?.state || "",
-            postcode: data.postcode || prev?.postcode || ""
+            latitude: lat,
+            longitude: lng,
+            name: data.building_name || prev?.name || '',
+            street: data.street_address || prev?.street || '',
+            city: data.city || prev?.city || '',
+            state: data.state || prev?.state || '',
+            postcode: data.postcode || prev?.postcode || ''
           }));
         } else {
           setLocationToConfirm((prev: any) => prev ? {
             ...prev,
-            latitude: lngLat.latitude,
-            longitude: lngLat.longitude
+            latitude: lat,
+            longitude: lng
           } : null);
         }
       } catch (err) {
+        console.error('Reverse geocoding point error:', err);
         setLocationToConfirm((prev: any) => prev ? {
           ...prev,
-          latitude: lngLat.latitude,
-          longitude: lngLat.longitude
+          latitude: lat,
+          longitude: lng
         } : null);
       } finally {
         setIsReverseGeocoding(false);
       }
-  };
+    });
 
+    return () => {
+      map.remove();
+    };
+  }, [loadingToken, token]);
 
-  if (isLoadingToken) {
+  // Sync marker position dynamically helper
+  useEffect(() => {
+    if (!mapInstance.current || !markerInstance.current) return;
+    const { latitude, longitude } = locationToConfirm;
+    if (latitude && longitude) {
+      markerInstance.current.setLngLat([longitude, latitude]);
+      mapInstance.current.easeTo({ center: [longitude, latitude] });
+    }
+  }, [locationToConfirm.latitude, locationToConfirm.longitude]);
+
+  if (loadingToken) {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-zinc-950 text-white z-50">
-        <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-sm font-medium">Loading map config...</p>
+      <div className="w-full h-full flex flex-col items-center justify-center bg-[#0d0d0d] gap-3 text-zinc-400">
+        <Loader2 size={24} className="animate-spin text-emerald-500" />
+        <span className="text-xs italic font-semibold">
+          {isMm ? 'မြေပုံဖွင့်နေပါသည်...' : 'Streaming map stream...'}
+        </span>
       </div>
     );
   }
 
   if (!token) {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-zinc-950 text-white z-50">
-        <AlertTriangle className="text-emerald-500 w-12 h-12 mb-3 animate-bounce" />
-        <h3 className="text-lg font-bold mb-2">Mapbox Access Token Required</h3>
-        <p className="text-xs text-zinc-400 max-w-sm mb-4">
-          Please provide a Mapbox Access token to render the Mapbox map.
+      <div className="w-full h-full flex flex-col items-center justify-center bg-[#0d0d0d] p-6 text-center text-zinc-500">
+        <MapPin size={34} className="text-zinc-650 animate-bounce mb-2" />
+        <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-1">
+          {isMm ? 'Mapbox Token မတွေ့ရှိပါ' : 'Mapbox Key Missing'}
         </p>
-        <div className="text-left text-xs text-zinc-300 bg-zinc-900 border border-zinc-800 rounded-xl p-4 w-full max-w-xs space-y-2">
-          <p><strong>Step 1:</strong> Settings (⚙️ icon on top right) → <strong>Secrets</strong></p>
-          <p><strong>Step 2:</strong> Create key: <code>VITE_MAPBOX_ACCESS_TOKEN</code></p>
-          <p><strong>Step 3:</strong> Paste your Mapbox default public token, press Enter.</p>
-        </div>
+        <p className="text-[11px] leading-relaxed max-w-xs">
+          {isMm 
+            ? 'ကျေးဇူးပြု၍ စနစ်ထိန်းချုပ်ခန်း (Settings) သို့မဟုတ် .env.example တွင် MAPBOX_ACCESS_TOKEN ကို ထည့်သွင်းပေးပါ။'
+            : 'Please configure MAPBOX_ACCESS_TOKEN in your environment or administrative settings.'}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-full">
-      <Map
-        ref={mapRef}
-        {...viewState}
-        onMove={(evt) => setViewState(evt.viewState)}
-        onMoveEnd={handleDragEnd}
-        mapStyle="mapbox://styles/mapbox/dark-v11"
-        mapboxAccessToken={token}
-        style={{ width: '100%', height: '100%' }}
-      />
+    <div className="w-full h-full relative" id="mapbox_div_holder">
+      <div ref={mapContainer} className="w-full h-full" />
       
-      {/* Ground pinpoint indicator halos at screen center */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none flex items-center justify-center">
-        <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center animate-ping absolute duration-1000" />
-        <div className="w-6 h-6 rounded-full bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-        </div>
+      {/* Floating hints panel */}
+      <div className={`absolute bottom-3 left-3 right-3 p-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider backdrop-blur-md shadow-md text-center border pointer-events-none select-none z-10 ${
+        darkMode 
+          ? 'bg-[#0b0d0e]/85 border-zinc-800/80 text-zinc-400' 
+          : 'bg-white/85 border-zinc-150 text-zinc-500'
+      }`}>
+        📍 {isMm ? 'လိပ်စာပြောင်းလဲရန် မြေပုံတည်နေရာကို နှိပ်ပါ' : 'Tap anywhere on the map to set delivery pin'}
       </div>
-
-      {/* Stationary Pin Drop on Screen Center */}
-      <div className="absolute top-[calc(50%-22px)] left-1/2 -translate-x-1/2 -translate-y-1/2 z-25 pointer-events-none flex flex-col items-center select-none">
-        <motion.div
-          animate={{ y: [0, -8, 0] }}
-          transition={{ repeat: Infinity, duration: 2.0, ease: "easeInOut" }}
-          className="flex flex-col items-center"
-        >
-          <div className="w-[36px] h-[36px] rounded-full bg-[#E53E3E] border-2 border-white flex items-center justify-center shadow-[0_4px_12px_rgba(0,0,0,0.5)] relative z-20">
-            <MapPin size={20} className="text-white fill-white stroke-[2.5]" strokeWidth={3} />
-          </div>
-          <div className="w-2 h-4 bg-white -mt-1.5 shadow-[0_2px_4px_rgba(0,0,0,0.4)] rounded-full relative z-10" />
-        </motion.div>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => {
-          if (initialCoordsRef.current) {
-            setViewState({
-                longitude: initialCoordsRef.current.lng,
-                latitude: initialCoordsRef.current.lat,
-                zoom: 16
-            });
-          }
-        }}
-        className="absolute bottom-4 right-4 z-40 w-8 h-8 rounded-full flex items-center justify-center bg-[#1a1a1f] border border-zinc-800 text-emerald-400 shadow-2xl active:scale-95 duration-100 transition-transform cursor-pointer hover:bg-zinc-900"
-        aria-label="Locate me"
-      >
-        <Navigation size={13} className="stroke-[2.5] fill-emerald-400/25 shrink-0 select-none" />
-      </button>
     </div>
   );
 };
