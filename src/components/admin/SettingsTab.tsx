@@ -273,21 +273,62 @@ export function SettingsTab({
       toast.error('Token and Chat ID are required to test');
       return;
     }
-    const promise = fetch('/api/telegram/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token,
-        chatId,
-        message: `🤖 <b>TELEGRAM NOTIFICATION TEST</b> 🤖\n━━━━━━━━━━━━━━━━━━\nYour Telegram Bot <b>${name || 'Unnamed Bot'}</b> is successfully connected to the Admin Dashboard! 🎉\n\n💬 <b>Chat ID:</b> <code>${chatId}</code>\n🕒 <b>Tested at:</b> ${new Date().toLocaleString()}\n\n<i>🟢 System notifications are active and ready to deliver real-time order alerts!</i>`
-      })
-    }).then(async (res) => {
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.success === false) {
-        throw new Error(data.error || `HTTP ${res.status}`);
+
+    const testMsg = `🤖 <b>TELEGRAM NOTIFICATION TEST</b> 🤖\n━━━━━━━━━━━━━━━━━━\nYour Telegram Bot <b>${name || 'Unnamed Bot'}</b> is successfully connected to the Admin Dashboard! 🎉\n\n💬 <b>Chat ID:</b> <code>${chatId}</code>\n🕒 <b>Tested at:</b> ${new Date().toLocaleString()}\n\n<i>🟢 System notifications are active and ready to deliver real-time order alerts!</i>`;
+
+    const promise = (async () => {
+      let cleanToken = (token || "").trim();
+      if (cleanToken.includes("telegram.org/bot")) {
+        const match = cleanToken.match(/telegram\.org\/bot([^/]+)/i);
+        if (match && match[1]) {
+          cleanToken = match[1].trim();
+        }
       }
-      return data;
-    });
+      if (cleanToken.toLowerCase().startsWith("bot")) {
+        cleanToken = cleanToken.substring(3).trim();
+      }
+      const cleanChatId = (chatId || "").toString().trim();
+
+      // Try local Proxy first
+      try {
+        const res = await fetch('/api/telegram/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: cleanToken,
+            chatId: cleanChatId,
+            message: testMsg
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success !== false) {
+          return data;
+        }
+      } catch (err: any) {
+        console.warn('Proxy test failed, falling back to direct standard API...', err);
+      }
+
+      // Try direct API fetch
+      try {
+        const directRes = await fetch(`https://api.telegram.org/bot${cleanToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: cleanChatId,
+            text: testMsg,
+            parse_mode: 'HTML'
+          })
+        });
+        const directData = await directRes.json().catch(() => ({}));
+        if (directRes.ok && directData.ok !== false) {
+          return { success: true, fallback: true, data: directData };
+        } else {
+          throw new Error(directData.description || `HTTP ${directRes.status}`);
+        }
+      } catch (directErr: any) {
+        throw new Error(directErr.message || "Failed to deliver message via telegram.org direct API");
+      }
+    })();
 
     toast.promise(promise, {
       loading: `Sending test message via ${name || 'Bot'}...`,

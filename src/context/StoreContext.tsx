@@ -2515,49 +2515,73 @@ ${itemsList}
 <i>🚀 Please process this order promptly!</i>
 `;
 
-    // 1. Send via legacy configuration if exists
-    if (settings.telegramToken && settings.telegramChatId) {
+    const dispatchMsg = async (tkn: string, chId: string, nameTag: string) => {
+      let cleanToken = (tkn || "").trim();
+      if (cleanToken.includes("telegram.org/bot")) {
+        const match = cleanToken.match(/telegram\.org\/bot([^/]+)/i);
+        if (match && match[1]) {
+          cleanToken = match[1].trim();
+        }
+      }
+      if (cleanToken.toLowerCase().startsWith("bot")) {
+        cleanToken = cleanToken.substring(3).trim();
+      }
+      const cleanChatId = (chId || "").toString().trim();
+
+      let success = false;
       try {
         const res = await fetch('/api/telegram/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            token: settings.telegramToken,
-            chatId: settings.telegramChatId,
+            token: cleanToken,
+            chatId: cleanChatId,
             message: message
           })
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.success === false) {
-          console.log('[Telegram Proxy Info]: Legacy notification not completed:', data.error || 'Connection check failed');
+        if (res.ok && data.success !== false) {
+          success = true;
+          console.log(`[Telegram Proxy Info]: Successfully sent message to ${nameTag} via proxy API`);
         }
-      } catch (error) {
-        console.log('[Telegram Proxy Info]: Legacy Telegram Notification fetch issue:', error);
+      } catch (err) {
+        console.warn(`[Telegram Proxy Info]: Proxy send issue for ${nameTag}, trying direct standard API approach...`, err);
       }
+
+      if (!success) {
+        try {
+          const directRes = await fetch(`https://api.telegram.org/bot${cleanToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: cleanChatId,
+              text: message,
+              parse_mode: 'HTML'
+            })
+          });
+          const directData = await directRes.json().catch(() => ({}));
+          if (directRes.ok && directData.ok !== false) {
+            success = true;
+            console.log(`[Telegram Proxy Info]: Direct delivery fallback succeeded for ${nameTag}`);
+          } else {
+            console.error(`[Telegram Proxy] Direct standard channel failed: ${directData.description || 'Connection issue'}`);
+          }
+        } catch (directErr) {
+          console.error(`[Telegram Proxy] Direct channel connection exception for ${nameTag}:`, directErr);
+        }
+      }
+    };
+
+    // 1. Send via legacy configuration if exists
+    if (settings.telegramToken && settings.telegramChatId) {
+      await dispatchMsg(settings.telegramToken, settings.telegramChatId, 'Legacy config');
     }
 
     // 2. Send via multiple bot configurations
     if (settings.telegramConfigs && settings.telegramConfigs.length > 0) {
       const activeConfigs = settings.telegramConfigs.filter(c => c.isActive);
-      
       for (const config of activeConfigs) {
-        try {
-          const res = await fetch('/api/telegram/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              token: config.token,
-              chatId: config.chatId,
-              message: message
-            })
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok || data.success === false) {
-            console.log(`[Telegram Proxy Info]: Notification not completed for ${config.name}:`, data.error || 'Connection check failed');
-          }
-        } catch (error) {
-          console.log(`[Telegram Proxy Info]: Telegram Notification fetch issue for ${config.name}:`, error);
-        }
+        await dispatchMsg(config.token, config.chatId, config.name);
       }
     }
   }, [settings.telegramToken, settings.telegramChatId, settings.telegramConfigs, formatPrice]);
