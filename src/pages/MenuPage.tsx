@@ -229,7 +229,7 @@ export default function MenuPage() {
             <div className="flex flex-col min-w-0 py-1">
               <h1 className="text-lg font-black text-primary leading-tight tracking-tight">စားတော်ဆက်</h1>
               <span className={`text-[8px] font-black uppercase tracking-wider truncate transition-colors ${darkMode ? 'text-on-surface-variant/60' : 'text-on-surface-variant/60'}`}>
-                Sar Taw Set {t('royalCaterer')}
+                Sar Taw Set {t('foodDelivery')}
               </span>
             </div>
           </div>
