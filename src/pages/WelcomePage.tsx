@@ -41,7 +41,7 @@ export default function WelcomePage() {
         {/* Title */}
         <div className="space-y-1">
           <h1 className="text-4xl font-serif text-on-surface">စားတော်ဆက်</h1>
-          <p className="text-xs uppercase tracking-widest text-on-surface-variant">Sar Taw Set ( Royal Caterer )</p>
+          <p className="text-xs uppercase tracking-widest text-on-surface-variant">Sar Taw Set ( Food Delivery )</p>
         </div>
 
         {/* Tagline */}
