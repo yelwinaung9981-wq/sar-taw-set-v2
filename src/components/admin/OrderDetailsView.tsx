@@ -53,6 +53,7 @@ export default function OrderDetailsView({
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [itemToCancel, setItemToCancel] = useState<{ id: string; index: number; name: string } | null>(null);
 
   useEffect(() => {
     if (isReceiptModalOpen) {
@@ -74,7 +75,7 @@ export default function OrderDetailsView({
     setIsCancelModalOpen(false);
   };
   
-  const { updateDeliveryStatus } = useStore();
+  const { updateDeliveryStatus, cancelOrderItem } = useStore();
   const handleSendToWhatsApp = () => {
     let itemsStr = order.items.map(i => `- ${i.quantity} x ${i.name}`).join('\n');
     let msg = `*NEW DELIVERY ORDER*\n\n`;
@@ -457,58 +458,160 @@ export default function OrderDetailsView({
                 <th className="py-3 px-4 text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-gray-400 text-right w-[80px] sm:w-[100px]">
                   TOTAL
                 </th>
+                {!isCancelled && !isDelivered && (
+                  <th className="py-3 px-4 text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-gray-400 text-center w-[80px] sm:w-[100px]">
+                    Action
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {order.items.map((item, i) => (
-                <tr
-                  key={item.id}
-                  className={`group border-b last:border-0 transition-colors ${
-                    darkMode
-                      ? "border-white/5 hover:bg-white/5"
-                      : "border-gray-50 hover:bg-emerald-50/30"
-                  }`}
-                >
-                  <td
-                    className={`py-3 px-4 text-[10px] sm:text-[11px] font-black text-center ${
-                      darkMode ? "text-on-surface-variant/40" : "text-gray-400"
-                    }`}
+                <React.Fragment key={item.id ? `item-f-${item.id}-${i}` : `item-f-idx-${i}`}>
+                  <tr
+                    className={`group border-b last:border-0 transition-colors ${
+                      darkMode
+                        ? "border-white/5 hover:bg-white/5"
+                        : "border-gray-50 hover:bg-emerald-50/30"
+                    } ${item.isCancelled ? 'opacity-50' : ''}`}
                   >
-                    {i + 1}
-                  </td>
-                  <td className="py-3 px-3">
-                    <div className="flex flex-col">
-                      <span
-                        className={`text-sm sm:text-base font-bold truncate ${
-                          darkMode ? "text-on-surface" : "text-gray-900"
-                        }`}
-                      >
-                        {item.name}
-                      </span>
-                    </div>
-                  </td>
-                  <td
-                    className={`py-3 px-4 text-[10px] sm:text-xs font-bold text-right ${
-                      darkMode ? "text-on-surface-variant/70" : "text-gray-500"
-                    }`}
-                  >
-                    <span className="opacity-70">{formatPrice(item.price)}</span>
-                  </td>
-                  <td
-                    className={`py-3 px-4 text-xs sm:text-sm font-black text-center ${
-                      darkMode ? "text-on-surface" : "text-emerald-950"
-                    }`}
-                  >
-                    x{item.quantity}
-                  </td>
-                  <td
-                    className={`py-3 px-4 text-[10px] sm:text-xs font-black text-right ${
-                      darkMode ? "text-primary" : "text-emerald-600"
-                    }`}
-                  >
-                    {formatPrice(item.price * item.quantity)}
-                  </td>
-                </tr>
+                    <td
+                      className={`py-3 px-4 text-[10px] sm:text-[11px] font-black text-center ${
+                        darkMode ? "text-on-surface-variant/40" : "text-gray-400"
+                      } ${item.isCancelled ? 'line-through opacity-50' : ''}`}
+                    >
+                      {i + 1}
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-3">
+                        {/* Product Thumbnail Image */}
+                        <div className={`w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border bg-slate-50 dark:bg-black/20 ${darkMode ? 'border-white/5' : 'border-slate-100'}`}>
+                          {item.image ? (
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[8px] opacity-40 font-bold uppercase tracking-widest">
+                              No Img
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span
+                            className={`text-xs sm:text-sm font-bold truncate ${
+                              item.isCancelled ? 'line-through text-on-surface-variant/60' : (darkMode ? "text-on-surface" : "text-gray-900")
+                            }`}
+                          >
+                            {item.name}
+                          </span>
+                          {item.isCancelled ? (
+                            <span className="text-[9px] text-rose-500 font-bold uppercase tracking-wider">
+                              Cancelled / Out of Stock
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </td>
+                    <td
+                      className={`py-3 px-4 text-[10px] sm:text-xs font-bold text-right ${
+                        darkMode ? "text-on-surface-variant/70" : "text-gray-500"
+                      } ${item.isCancelled ? 'line-through opacity-50' : ''}`}
+                    >
+                      <span className="opacity-70">{formatPrice(item.price)}</span>
+                    </td>
+                    <td
+                      className={`py-3 px-4 text-xs sm:text-sm font-black text-center ${
+                        darkMode ? "text-on-surface" : "text-emerald-950"
+                      } ${item.isCancelled ? 'line-through opacity-50' : ''}`}
+                    >
+                      x{item.quantity}
+                    </td>
+                    <td
+                      className={`py-3 px-4 text-[10px] sm:text-xs font-black text-right ${
+                        darkMode ? "text-primary" : "text-emerald-600"
+                      } ${item.isCancelled ? 'line-through opacity-50' : ''}`}
+                    >
+                      {formatPrice(item.price * item.quantity)}
+                    </td>
+                    {!isCancelled && !isDelivered && (
+                      <td className="py-3 px-4 text-center">
+                        {item.isCancelled ? (
+                          <span className="text-[10px] text-rose-500 font-bold uppercase tracking-wider block">
+                            ဖျက်ပြီး
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setItemToCancel({ id: item.id || '', index: i, name: item.name })}
+                            className={`p-1.5 rounded-lg border transition-all hover:bg-rose-500 hover:text-white ${
+                              darkMode 
+                                ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' 
+                                : 'bg-rose-50 border-rose-100 text-rose-600'
+                            }`}
+                            title="ဖျက်ရန် (Cancel specific item)"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+
+                  {itemToCancel && itemToCancel.id === item.id && itemToCancel.index === i && (
+                    <tr className="animate-fade-in bg-rose-500/[0.04] dark:bg-rose-500/[0.08]">
+                      <td colSpan={(!isCancelled && !isDelivered) ? 6 : 5} className="p-0 border-b border-rose-500/20">
+                        <div className={`p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                          darkMode ? 'text-on-surface' : 'text-slate-800'
+                        }`}>
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 bg-rose-500/10 text-rose-500 rounded-full flex-shrink-0 mt-0.5 animate-pulse">
+                              <XCircle size={18} />
+                            </div>
+                            <div className="space-y-1 text-left">
+                              <h4 className="text-xs sm:text-xs font-black uppercase tracking-wider text-rose-500">
+                                ပါဝင်ပစ္စည်း ဖျက်သိမ်းခြင်း (Cancel Specific Item)
+                              </h4>
+                              <p className={`text-xs sm:text-xs leading-relaxed max-w-xl opacity-90 font-medium`}>
+                                ယခုအော်ဒါထဲမှ သင်ရွေးချယ်ထားသော <span className="font-extrabold text-rose-500">"{item.name}"</span> ကို ဖျက်သိမ်းရန် သေချာပါသလား? ဤလုပ်ဆောင်ချက်သည် စုစုပေါင်းကျသင့်ငွေကို အလိုအလျောက် ပြန်လည်တွက်ချက်ပေးမည်ဖြစ်သည်။
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2.5 self-end md:self-center shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setItemToCancel(null)}
+                              className={`px-4 py-2 rounded-xl text-[10px] uppercase tracking-widest font-black transition-all ${
+                                darkMode
+                                  ? 'bg-slate-800 hover:bg-slate-700 text-white border border-white/5'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              မလုပ်တော့ပါ (Keep)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await cancelOrderItem(order.id, itemToCancel.id, itemToCancel.index, `Cancelled: ${itemToCancel.name}`);
+                                } catch (e) {
+                                  console.error(e);
+                                } finally {
+                                  setItemToCancel(null);
+                                }
+                              }}
+                              className="px-4 py-2 rounded-xl text-[10px] uppercase tracking-widest font-black text-white bg-rose-500 hover:bg-rose-600 transition-all shadow-md shadow-rose-500/15"
+                            >
+                              ဖျက်သိမ်းမည် (Cancel)
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

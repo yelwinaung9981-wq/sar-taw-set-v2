@@ -45,6 +45,54 @@ import { storage } from '../lib/firebase';
 import { BroadcastToast } from '../components/ui/BroadcastToast';
 import { toast } from 'sonner';
 
+export const normalizePhone = (phoneStr: string, defaultCountryCode: string = "60"): string => {
+  if (!phoneStr) return "";
+  
+  // Clean all non-digit characters
+  let clean = phoneStr.replace(/\D/g, "");
+  if (!clean) return "";
+
+  // Normalize/clean defaultCountryCode
+  const cc = defaultCountryCode.replace(/\D/g, "");
+
+  // If already starts with the specific chosen default country code
+  if (cc && clean.startsWith(cc)) {
+    return `+${clean}`;
+  }
+
+  // Handle Myanmar specific mappings
+  if (clean.startsWith("95")) {
+    return `+${clean}`;
+  }
+  if (clean.startsWith("09")) {
+    return `+959` + clean.substring(2);
+  }
+  // Myanmar mobile no-prefix
+  if (clean.startsWith("9") && (clean.length === 9 || clean.length === 10 || clean.length === 8)) {
+    return `+95` + clean;
+  }
+
+  // Handle Malaysia specific mappings
+  if (clean.startsWith("60")) {
+    return `+${clean}`;
+  }
+  if (clean.startsWith("01")) {
+    return `+601` + clean.substring(2);
+  }
+  // Malaysia mobile no-prefix
+  if (clean.startsWith("1") && (clean.length === 9 || clean.length === 10)) {
+    return `+60` + clean;
+  }
+
+  // General fallback: if it starts with 0 (and not handled by 01 or 09), strip it and prepend chosen country code
+  if (clean.startsWith("0")) {
+    return `+${cc}` + clean.substring(1);
+  }
+
+  // Otherwise, fallback to prepending country code
+  return `+${cc}${clean}`;
+};
+
 export interface Product {
   id: string;
   name: string;
@@ -68,6 +116,7 @@ export interface Product {
 
 export interface CartItem extends Product {
   quantity: number;
+  isCancelled?: boolean;
 }
 
 export interface Session {
@@ -284,6 +333,7 @@ interface StoreContextType {
   updateOrderStatus: (id: string, status: Order['status'], cancelReason?: string) => void;
   updateDeliveryStatus: (id: string, status: Order['deliveryStatus'], riderInfo?: { uid: string; name: string }) => Promise<void>;
   cancelOrder: (id: string) => void;
+  cancelOrderItem: (orderId: string, itemId: string, itemIndex: number, reason?: string) => Promise<void>;
   reorder: (order: Order) => Promise<{ success: boolean; message?: string }>;
   favorites: string[];
   toggleFavorite: (id: string) => void;
@@ -379,6 +429,7 @@ interface StoreContextType {
   removeRider: (uid: string) => Promise<void>;
   users: any[];
   updateUserPoints: (uid: string, points: number) => Promise<void>;
+  updateUserDeliverySettings: (uid: string | string[], feeOverride: number | null, isFree: boolean, expiryDate?: Date | null) => Promise<void>;
   isAdmin: boolean;
   isRider: boolean;
   isAuthLoading: boolean;
@@ -514,6 +565,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const val = localStorage.getItem('sp_user_birthday');
     return (val && val !== 'null' && val !== 'undefined') ? val : '';
   });
+  const [userDeliveryFeeOverride, setUserDeliveryFeeOverride] = useState<number | null>(null);
+  const [userIsFreeDelivery, setUserIsFreeDelivery] = useState<boolean>(false);
+  const [userDeliverySettingsExpiry, setUserDeliverySettingsExpiry] = useState<string | null>(null);
   const [roomNumber, setRoomNumber] = useState(() => localStorage.getItem('sp_room') || '');
   const [orders, setOrders] = useState<Order[]>(() => safeParse(localStorage.getItem('sp_orders'), []));
   const [totalOrders, setTotalOrders] = useState<number>(0);
@@ -685,9 +739,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // UID for data is derived from phone number for persistence across devices
   const uid = useMemo(() => {
     if (!userPhone) return null;
-    const cleanPhone = userPhone.replace(/[^0-9+]/g, '');
-    if (!cleanPhone) return null;
-    return cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`;
+    return normalizePhone(userPhone);
   }, [userPhone]);
 
   const logAudit = useCallback(async (action: string, target: string, details: string) => {
@@ -757,6 +809,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCart([]);
     setNotifications([]);
     setPaymentMethods([]);
+    setUserDeliveryFeeOverride(null);
+    setUserIsFreeDelivery(false);
 
     // Invalidate sync refs to ensure proper initial merge from cloud
     lastSyncedCartRef.current = '[]';
@@ -921,6 +975,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const data = snap.data();
       
       // Batch state updates using functional updates for stability
+      setUserDeliveryFeeOverride(data.deliveryFeeOverride !== undefined ? data.deliveryFeeOverride : null);
+      setUserIsFreeDelivery(data.isFreeDelivery !== undefined ? data.isFreeDelivery : false);
+      setUserDeliverySettingsExpiry(data.deliverySettingsExpiry !== undefined ? data.deliverySettingsExpiry : null);
       setPoints(prev => data.points !== undefined && prev !== data.points ? (data.points || 0) : prev);
       setUserName(prev => {
         if (data.name && data.name !== prev) {
@@ -2598,10 +2655,7 @@ ${itemsList}
     note?: string;
     paymentScreenshot?: string;
   }) => {
-    let orderPhoneId = details.phone.replace(/[^0-9+]/g, '');
-    if (orderPhoneId && !orderPhoneId.startsWith('+')) {
-      orderPhoneId = `+${orderPhoneId}`;
-    }
+    const orderPhoneId = normalizePhone(details.phone);
     if (!orderPhoneId) return null;
     
     // Generate a strictly 8-digit numeric order ID
@@ -2638,7 +2692,7 @@ ${itemsList}
 
     try {
       // 1. Update local state immediately for responsiveness
-      if (!userPhone || userPhone !== details.phone) {
+      if (!userPhone) {
         setUserPhone(details.phone);
         localStorage.setItem('sp_user_phone', details.phone);
       }
@@ -2967,6 +3021,93 @@ ${itemsList}
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `orders/${id}`);
+    }
+  };
+
+  const cancelOrderItem = async (orderId: string, itemId: string, itemIndex: number, reason?: string) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot modify order items.');
+      return;
+    }
+    const order = adminOrders.find(o => o.id === orderId) || orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const targetItem = order.items[itemIndex];
+    if (!targetItem || targetItem.id !== itemId || targetItem.isCancelled) return;
+
+    // Find the item with index and ID
+    const updatedItems = order.items.map((item, idx) => {
+      if (idx === itemIndex && item.id === itemId) {
+        return { ...item, isCancelled: true };
+      }
+      return item;
+    });
+
+    // Recalculate totals
+    // Active items subtotal
+    const activeItems = updatedItems.filter(item => !item.isCancelled);
+    const newCartTotal = activeItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const newEarnedPoints = Math.floor(newCartTotal * 10);
+
+    // If there are zero active items left, we cancel the entire order!
+    if (activeItems.length === 0) {
+      await updateOrderStatus(orderId, 'cancelled', reason || "All items out of stock / cancelled");
+      return;
+    }
+
+    const deliveryCost = order.deliveryFee || 0;
+    const pointDiscount = order.pointDiscount || 0;
+    const newTotal = Math.max(0, newCartTotal - pointDiscount + deliveryCost);
+
+    const toastId = toast.loading(`Cancelling item "${targetItem.name}"...`);
+    try {
+      const orderRef = doc(db, 'orders', orderId);
+      const batch = writeBatch(db);
+
+      // Return product stock back to inventory if tracking stock
+      batch.set(doc(db, 'products', targetItem.id), {
+        stock: increment(targetItem.quantity)
+      }, { merge: true });
+
+      // Update Order document
+      const orderUpdateData = {
+        items: updatedItems,
+        total: newTotal,
+        earnedPoints: newEarnedPoints,
+        updatedAt: serverTimestamp()
+      };
+      batch.update(orderRef, orderUpdateData);
+
+      // If the order is already delivered, we adjust the user's earned points difference
+      if (order.status === 'delivered' && order.uid && order.earnedPoints && order.earnedPoints > newEarnedPoints) {
+        const pointDiff = order.earnedPoints - newEarnedPoints;
+        batch.set(doc(db, 'users', order.uid), {
+          points: increment(-pointDiff)
+        }, { merge: true });
+        
+        const transactionId = `TX-ADJ-${Date.now()}`;
+        batch.set(doc(db, 'users', order.uid, 'pointTransactions', transactionId), {
+          id: transactionId,
+          uid: order.uid,
+          authUid: authUid,
+          type: 'adjustment_deduct',
+          amount: pointDiff,
+          description: `Adjustment for cancelled item in order ${orderId}`,
+          createdAt: serverTimestamp()
+        });
+      }
+
+      await batch.commit();
+
+      // Update local state
+      const updateFunction = (prev: Order[]) => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, total: newTotal, earnedPoints: newEarnedPoints } : o);
+      setOrders(updateFunction);
+      setAdminOrders(updateFunction);
+
+      toast.success(`Cancelled "${targetItem.name}" from order successfully`, { id: toastId });
+    } catch (error: any) {
+      console.error("Error cancelling order item:", error);
+      toast.error(`Error: ${error.message || 'Failed to cancel item'}`, { id: toastId });
     }
   };
 
@@ -3405,6 +3546,34 @@ ${itemsList}
       await logAudit('update_user_points', 'user', `Updated points for user ${uid} to ${points}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
+    }
+  };
+
+  const updateUserDeliverySettings = async (uid: string | string[], feeOverride: number | null, isFree: boolean, expiryDate: Date | null = null) => {
+    if (getIsQuotaExceeded()) {
+      toast.error('Daily limit reached. Cannot update delivery settings.');
+      return;
+    }
+    try {
+      const uids = Array.isArray(uid) ? uid : [uid];
+      for (const singleUid of uids) {
+        await setDoc(doc(db, 'users', singleUid), { 
+          deliveryFeeOverride: feeOverride, 
+          isFreeDelivery: isFree,
+          deliverySettingsExpiry: expiryDate ? expiryDate.toISOString() : null
+        }, { merge: true });
+        await logAudit('update_user_delivery_settings', 'user', `Updated delivery settings for user ${singleUid}: feeOverride=${feeOverride}, isFree=${isFree}, expiryDate=${expiryDate ? expiryDate.toISOString() : 'null'}`);
+      }
+      setUsers(prev => prev.map(u => {
+        const matches = uids.includes(u.id) || uids.includes(u.uid);
+        if (matches) {
+          return { ...u, deliveryFeeOverride: feeOverride, isFreeDelivery: isFree, deliverySettingsExpiry: expiryDate ? expiryDate.toISOString() : null };
+        }
+        return u;
+      }));
+      toast.success('Customer delivery settings updated successfully');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users_delivery_settings`);
     }
   };
 
@@ -3965,6 +4134,15 @@ ${itemsList}
     estimatedDeliveryTime, emailNotificationsEnabled, supportContacts, paymentMethods
   ]);
 
+  const effectiveDeliveryFee = (() => {
+    const isExpired = userDeliverySettingsExpiry && new Date(userDeliverySettingsExpiry) < new Date();
+    if (isExpired) return deliveryFee;
+    
+    return userIsFreeDelivery 
+      ? 0 
+      : (userDeliveryFeeOverride !== null ? userDeliveryFeeOverride : deliveryFee);
+  })();
+
   const value = useMemo(() => ({
     cart, 
       addToCart, 
@@ -3999,6 +4177,7 @@ ${itemsList}
       placeOrder, 
       updateOrderStatus,
       cancelOrder,
+      cancelOrderItem,
       reorder,
       favorites,
       toggleFavorite,
@@ -4028,7 +4207,7 @@ ${itemsList}
       setDarkMode,
     isDeliveryEnabled,
     setIsDeliveryEnabled,
-    deliveryFee,
+    deliveryFee: effectiveDeliveryFee,
     setDeliveryFee,
     isLowStockAlertEnabled,
     setIsLowStockAlertEnabled,
@@ -4103,6 +4282,7 @@ ${itemsList}
     removeRider,
     users,
     updateUserPoints,
+    updateUserDeliverySettings,
     isAdmin,
     isRider,
     isAuthLoading,
@@ -4151,7 +4331,8 @@ ${itemsList}
     currency,
     darkMode,
     isDeliveryEnabled,
-    deliveryFee,
+    effectiveDeliveryFee,
+    updateUserDeliverySettings,
     isLowStockAlertEnabled,
     isMaintenanceMode,
     cutoffTime,

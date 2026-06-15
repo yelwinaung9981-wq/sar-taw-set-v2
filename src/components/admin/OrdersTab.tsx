@@ -340,8 +340,12 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
                     <div className="text-right">
                       <p className="text-5xl font-black tracking-tighter leading-none">
                         {(() => {
-                           const sub = order.items.reduce((acc: number, item: any) => acc + (Number(item.price) || 0) * (item.quantity || 1), 0);
-                           return formatPrice(Number(order.total) || Number(order.totalAmount) || (sub + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0)));
+                           const sub = order.items.reduce((acc: number, item: any) => acc + (item.isCancelled ? 0 : (Number(item.price) || 0) * (item.quantity || 1)), 0);
+                           const hasCancelled = order.items.some((i: any) => i.isCancelled);
+                           const finalPrice = hasCancelled 
+                             ? Math.max(0, sub + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0))
+                             : (Number(order.total) || Number(order.totalAmount) || Math.max(0, sub + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0)));
+                           return formatPrice(finalPrice);
                         })()}
                       </p>
                       <p className="text-[13px] font-black opacity-40 uppercase tracking-[0.25em] mt-3">
@@ -599,7 +603,7 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
                     <div className="flex justify-between items-center mb-3 md:mb-4 opacity-60">
                       <p className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em]">Gross Settlement</p>
                       <p className="text-xs md:text-sm font-black tabular-nums">
-                        {formatPrice(selectedOrder.items.reduce((acc, item) => acc + item.price * (item.quantity || 1), 0))}
+                        {formatPrice(selectedOrder.items.reduce((acc, item) => acc + (item.isCancelled ? 0 : item.price * (item.quantity || 1)), 0))}
                       </p>
                     </div>
                     <div className="flex justify-between items-center mb-3 md:mb-4 opacity-60">
@@ -619,7 +623,14 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
                       <div>
                         <p className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.4em] opacity-40 mb-1 md:mb-2">Final Allocation</p>
                         <p className="text-2xl md:text-4xl font-black tracking-tighter text-white tabular-nums leading-none">
-                          {formatPrice(selectedOrder.total)}
+                          {(() => {
+                            const sub = selectedOrder.items.reduce((acc, item) => acc + (item.isCancelled ? 0 : item.price * (item.quantity || 1)), 0);
+                            const hasCancelled = selectedOrder.items.some(item => item.isCancelled);
+                            const finalPrice = hasCancelled 
+                              ? Math.max(0, sub + (Number(selectedOrder.deliveryFee) || 0) - (Number(selectedOrder.pointDiscount) || 0))
+                              : (Number(selectedOrder.total) || Math.max(0, sub + (Number(selectedOrder.deliveryFee) || 0) - (Number(selectedOrder.pointDiscount) || 0)));
+                            return formatPrice(finalPrice);
+                          })()}
                         </p>
                       </div>
                       <div className="flex flex-col items-end">

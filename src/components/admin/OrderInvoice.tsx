@@ -33,8 +33,11 @@ const parseOrderDate = (createdAt: any, timestamp?: any): Date => {
 
 export default function OrderInvoice({ order, formatPrice, t, id }: OrderInvoiceProps) {
   const { settings } = useStore();
-  const itemsSubtotal = order.items.reduce((acc, item) => acc + (Number(item.price) || 0) * (item.quantity || 1), 0);
-  const orderTotal = Number(order.total) || Number(order.totalAmount) || (itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0));
+  const itemsSubtotal = order.items.reduce((acc, item) => acc + (item.isCancelled ? 0 : (Number(item.price) || 0) * (item.quantity || 1)), 0);
+  const hasCancelledItems = order.items.some(item => item.isCancelled);
+  const orderTotal = hasCancelledItems 
+    ? Math.max(0, itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0))
+    : (Number(order.total) || Number(order.totalAmount) || Math.max(0, itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0)));
 
   const shopUrl = settings?.productionUrl || window.location.origin;
 
@@ -193,16 +196,20 @@ export default function OrderInvoice({ order, formatPrice, t, id }: OrderInvoice
             </thead>
             <tbody className="divide-y divide-black/20 print:divide-black">
               {order.items.map((item, index) => (
-                <tr key={index} className="print:border-b print:border-black">
+                <tr key={index} className={`print:border-b print:border-black ${item.isCancelled ? 'line-through' : ''}`}>
                   <td className="py-2 px-1 col-item" style={{ width: '50%' }}>
-                    <p className="text-sm sm:text-base font-black text-black thermal-bold leading-tight print:thermal-text-base">{item.name}</p>
-                    <p className="text-[10px] font-black text-black uppercase thermal-bold leading-tight print:thermal-text-sm opacity-70">{item.mmName}</p>
+                    <p className="text-sm sm:text-base font-black text-black thermal-bold leading-tight print:thermal-text-base">
+                      {item.name} {item.isCancelled ? '(Cancelled)' : ''}
+                    </p>
+                    <p className="text-[10px] font-black text-black uppercase thermal-bold leading-tight print:thermal-text-sm opacity-70">
+                      {item.mmName} {item.isCancelled ? '(ဖျက်ပြီး)' : ''}
+                    </p>
                   </td>
                   <td className="py-2 px-1 text-center font-black text-black thermal-bold col-qty print:thermal-text-base" style={{ width: '20%', textAlign: 'center' }}>
                     {item.quantity}
                   </td>
                   <td className="py-2 px-1 text-right font-black text-black tabular-nums thermal-bold col-price print:thermal-text-base" style={{ width: '30%', textAlign: 'right' }}>
-                    {formatPrice(item.price * item.quantity)}
+                    {item.isCancelled ? formatPrice(0) : formatPrice(item.price * item.quantity)}
                   </td>
                 </tr>
               ))}

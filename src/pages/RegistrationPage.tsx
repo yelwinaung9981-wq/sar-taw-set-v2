@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { useStore } from '../context/StoreContext';
+import { useStore, normalizePhone } from '../context/StoreContext';
 import { User, Phone, ArrowRight, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -28,12 +28,9 @@ export default function RegistrationPage() {
     e.preventDefault();
     isSubmissionRef.current = true;
 
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-    const phoneNoPrefix = cleanPhone.startsWith('95') ? cleanPhone.substring(2) : cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone;
-    const cleanCountryCode = countryCode.replace(/[^0-9]/g, '');
-    const fullPhone = `+${cleanCountryCode}${phoneNoPrefix}`;
+    const fullPhone = normalizePhone(phone, countryCode);
 
-    if (!name || !cleanPhone) {
+    if (!name || !phone.trim() || !fullPhone) {
         toast.error(t('pleaseEnterContactInfo') || "အမည်နှင့် ဖုန်းနံပါတ် ဖြည့်ပေးပါ။");
         return;
     }
@@ -69,11 +66,29 @@ export default function RegistrationPage() {
     }
 
     const userRef = doc(db, 'users', userPhone);
-    await setDoc(userRef, {
+    let userDocExist = false;
+    let existingCreatedAt = null;
+    try {
+      const userDoc = await getDoc(userRef);
+      if (userDoc.exists()) {
+        userDocExist = true;
+        existingCreatedAt = userDoc.data()?.createdAt;
+      }
+    } catch (e) {
+      console.warn("Failed to check existing user:", e);
+    }
+
+    const userData: any = {
       name: userName,
       phone: userPhone,
       lastDeviceId: deviceId
-    }, { merge: true });
+    };
+
+    if (!userDocExist || !existingCreatedAt) {
+      userData.createdAt = Date.now();
+    }
+
+    await setDoc(userRef, userData, { merge: true });
 
     localStorage.setItem('sp_user_name', userName);
     localStorage.setItem('sp_user_phone', userPhone);

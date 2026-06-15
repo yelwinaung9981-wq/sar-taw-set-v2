@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useStore, Product, Order } from "../context/StoreContext";
+import { useStore, Product, Order, normalizePhone } from "../context/StoreContext";
 import OrdersTab from "../components/admin/OrdersTab";
 import OrderDetailsView from "../components/admin/OrderDetailsView";
 import ProductsTab from "../components/admin/ProductsTab";
@@ -1552,7 +1552,7 @@ function OrderDetailModal({
                         <span className="text-[10px] font-bold font-mono">
                           {formatPrice(
                             order.items.reduce(
-                              (acc, item) => acc + item.price * item.quantity,
+                              (acc, item) => acc + (item.isCancelled ? 0 : item.price * item.quantity),
                               0,
                             ),
                           )}
@@ -1609,9 +1609,12 @@ function OrderDetailModal({
                           className={`text-2xl font-black tracking-tighter leading-none ${darkMode ? "text-primary" : "text-emerald-950"}`}
                         >
                           {(() => {
-                            const itemsSub = order.items.reduce((acc: number, item: any) => acc + (Number(item.price) || 0) * (item.quantity || 1), 0);
-                            const total = Number(order.total) || Number(order.totalAmount) || (itemsSub + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0));
-                            return formatPrice(total);
+                            const itemsSub = order.items.reduce((acc: number, item: any) => acc + (item.isCancelled ? 0 : (Number(item.price) || 0) * (item.quantity || 1)), 0);
+                            const hasCancelled = order.items.some((i: any) => i.isCancelled);
+                            const finalPrice = hasCancelled 
+                              ? Math.max(0, itemsSub + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0))
+                              : (Number(order.total) || Number(order.totalAmount) || Math.max(0, itemsSub + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0)));
+                            return formatPrice(finalPrice);
                           })()}
                         </p>
                       </div>
@@ -3554,8 +3557,65 @@ function CustomerDetailsView({
   const [isBlockingOrUnblocking, setIsBlockingOrUnblocking] = React.useState(false);
   const [showImagePreview, setShowImagePreview] = React.useState(false);
   const [expandedOrderId, setExpandedOrderId] = React.useState<string | null>(null);
+
+  const [isFreeDel, setIsFreeDel] = React.useState(customer.isFreeDelivery || false);
+  const [customFeeActive, setCustomFeeActive] = React.useState(customer.deliveryFeeOverride !== undefined && customer.deliveryFeeOverride !== null);
+  const [customFeeVal, setCustomFeeVal] = React.useState(customer.deliveryFeeOverride !== undefined && customer.deliveryFeeOverride !== null ? customer.deliveryFeeOverride.toString() : "");
+  const [expiryDate, setExpiryDate] = React.useState<string>(customer.deliverySettingsExpiry ? new Date(customer.deliverySettingsExpiry).toISOString().split('T')[0] : "");
+  const [savingDelivery, setSavingDelivery] = React.useState(false);
   
-  const { formatPrice, t, updateOrderStatus } = useStore();
+  const { formatPrice, t, updateOrderStatus, updateUserDeliverySettings, currency } = useStore();
+
+  React.useEffect(() => {
+    setIsFreeDel(customer.isFreeDelivery || false);
+    const hasOverride = customer.deliveryFeeOverride !== undefined && customer.deliveryFeeOverride !== null;
+    setCustomFeeActive(hasOverride);
+    setCustomFeeVal(hasOverride ? customer.deliveryFeeOverride.toString() : "");
+    setExpiryDate(customer.deliverySettingsExpiry ? new Date(customer.deliverySettingsExpiry).toISOString().split('T')[0] : "");
+  }, [customer]);
+
+  const handleSaveDeliverySettings = async () => {
+    setSavingDelivery(true);
+    try {
+      const feeOverride = (customFeeActive && customFeeVal.trim() !== '') ? parseInt(customFeeVal, 10) : null;
+      if (feeOverride !== null && isNaN(feeOverride)) {
+        toast.error('Invalid input. Delivery fee must be a number.');
+        return;
+      }
+      
+      const expiry = expiryDate ? new Date(expiryDate) : null;
+      
+      // Collect all potential UIDs/IDs belonging to this consolidated customer
+      const targetUids: string[] = [];
+      if (customer.uids && customer.uids.length > 0) {
+        customer.uids.forEach((id: string) => {
+          if (id && !targetUids.includes(id)) targetUids.push(id);
+        });
+      }
+      if (customer.id && !targetUids.includes(customer.id)) {
+        targetUids.push(customer.id);
+      }
+      if (customer.uid && !targetUids.includes(customer.uid)) {
+        targetUids.push(customer.uid);
+      }
+
+      // Ensure the exact phone-based document target exists in list
+      if (customer.phone) {
+        const cleanPhone = customer.phone.replace(/[^0-9+]/g, '');
+        const formattedPhone = cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`;
+        if (!targetUids.includes(formattedPhone)) {
+          targetUids.push(formattedPhone);
+        }
+      }
+
+      await updateUserDeliverySettings(targetUids, isFreeDel ? null : feeOverride, isFreeDel, expiry);
+    } catch (e) {
+      console.error(e);
+      toast.error('Error saving settings');
+    } finally {
+      setSavingDelivery(false);
+    }
+  };
 
   const leftColRef = React.useRef<HTMLDivElement>(null);
   const [leftColHeight, setLeftColHeight] = React.useState<number | null>(null);
@@ -3616,14 +3676,7 @@ function CustomerDetailsView({
   
   // Helper for Phone Matching
   const getPhoneGroupKey = (phone: string) => {
-    if (!phone) return "";
-    let cleaned = phone.replace(/\D/g, "");
-    if (cleaned.startsWith("09")) {
-      cleaned = "95" + cleaned.substring(1);
-    } else if (cleaned.startsWith("01")) {
-      cleaned = "60" + cleaned.substring(1);
-    }
-    return cleaned;
+    return normalizePhone(phone);
   };
 
   // Filter orders related to this customer
@@ -3737,6 +3790,7 @@ function CustomerDetailsView({
     }
   };
 
+  console.log("AdminDashboard component");
   const getStatusBadgeStyles = (status: string) => {
     switch (status) {
       case "pending":
@@ -3866,9 +3920,9 @@ function CustomerDetailsView({
       </div>
 
       {/* Main Grid split */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
         {/* COLUMN 1: Left dossier card details */}
-        <div ref={leftColRef} className="lg:col-span-4 space-y-6">
+        <div ref={leftColRef} className="lg:col-span-3 space-y-6">
           
           {/* Simple Clean Profile block */}
           <div className={`p-6 rounded-xl border text-center relative overflow-hidden transition-all duration-200 ${
@@ -3930,7 +3984,7 @@ function CustomerDetailsView({
           </div>
 
           {/* Wallet Financial Stats Overview */}
-          <div className={`p-5 rounded-xl border space-y-4 ${
+          <div className={`p-4 rounded-xl border space-y-3 ${
             darkMode ? "bg-surface-container border-white/5" : "bg-white border-slate-200 shadow-xs"
           }`}>
             <h5 className="text-[10px] font-bold uppercase tracking-wider opacity-60 flex items-center gap-1.5 pl-0.5 text-slate-500">
@@ -3938,47 +3992,47 @@ function CustomerDetailsView({
               FINANCIAL OVERVIEW
             </h5>
             
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               {/* Total Spend */}
-              <div className={`p-3.5 rounded-lg border ${
+              <div className={`p-2.5 rounded-lg border ${
                 darkMode ? 'bg-zinc-900/60 border-white/5' : 'bg-slate-50 border-slate-150 shadow-2xs'
               }`}>
-                <p className="text-[8.5px] font-bold text-slate-400 uppercase tracking-widest">Total Spend</p>
-                <p className="font-bold text-base tracking-tight text-emerald-500 mt-1">
+                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Total Spend</p>
+                <p className="font-bold text-sm tracking-tight text-emerald-500 mt-0.5">
                   RM {stats.totalSpend.toLocaleString()}
                 </p>
               </div>
 
               {/* AOV */}
-              <div className={`p-3.5 rounded-lg border ${
+              <div className={`p-2.5 rounded-lg border ${
                 darkMode ? 'bg-zinc-900/60 border-white/5' : 'bg-slate-50 border-slate-150 shadow-2xs'
               }`}>
-                <p className="text-[8.5px] font-bold text-slate-400 uppercase tracking-widest">Average Order</p>
-                <p className="font-bold text-base tracking-tight text-primary mt-1">
+                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Average Order</p>
+                <p className="font-bold text-sm tracking-tight text-primary mt-0.5">
                   RM {Math.round(stats.avgOrderValue).toLocaleString()}
                 </p>
               </div>
 
               {/* Total OrdersCount */}
-              <div className={`p-3.5 rounded-lg border ${
+              <div className={`p-2.5 rounded-lg border ${
                 darkMode ? 'bg-zinc-900/60 border-white/5' : 'bg-slate-50 border-slate-150 shadow-2xs'
               }`}>
-                <p className="text-[8.5px] font-bold text-slate-400 uppercase tracking-widest">Total Orders</p>
-                <div className="flex items-baseline gap-1 mt-1">
-                  <span className="font-bold text-base tracking-tight text-on-surface">
-                    {stats.orderCount}
-                  </span>
+                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Total Orders</p>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <p className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">
+                    {stats.ordersCount}
+                  </p>
                   <span className="text-[9px] opacity-50 font-bold">({stats.deliveredCount} Del)</span>
                 </div>
               </div>
 
               {/* Star loyalty points */}
-              <div className={`p-3.5 rounded-lg border ${
+              <div className={`p-2.5 rounded-lg border ${
                 darkMode ? 'bg-zinc-900/60 border-white/5' : 'bg-slate-50 border-slate-150 shadow-2xs'
               }`}>
                 <p className="text-[8.5px] font-bold text-slate-400 tracking-wider uppercase">STAR POINTS</p>
-                <p className="font-bold text-base tracking-tight text-indigo-400 mt-1 flex items-center gap-1">
-                  <Sparkles size={13} className="text-primary opacity-80" />
+                <p className="font-bold text-sm tracking-tight text-indigo-400 mt-0.5 flex items-center gap-1">
+                  <Sparkles size={11} className="text-primary opacity-80" />
                   {customer.points || 0}
                 </p>
               </div>
@@ -4031,9 +4085,11 @@ function CustomerDetailsView({
                 <div className="flex items-start justify-between gap-3 pb-2.5 border-b border-on-surface/5">
                   <span className="text-slate-400 font-medium shrink-0">Joined Date:</span>
                   <span className="font-semibold text-on-surface text-right">
-                    {typeof customer.createdAt === 'string' 
-                      ? customer.createdAt 
-                      : (new Date(customer.createdAt)).toLocaleDateString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })}
+                    {parseOrderDate(customer.createdAt).toLocaleString("en-MY", { 
+                      timeZone: "Asia/Kuala_Lumpur",
+                      dateStyle: "medium",
+                      timeStyle: "short"
+                    })}
                   </span>
                 </div>
               )}
@@ -4061,6 +4117,124 @@ function CustomerDetailsView({
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Customer Specific Delivery Customization Box */}
+          <div className={`p-5 rounded-xl border space-y-4 ${
+            darkMode ? "bg-surface-container border-white/5" : "bg-white border-slate-200 shadow-xs"
+          }`}>
+            <div className="flex items-center justify-between">
+              <h5 className="text-[10px] font-bold uppercase tracking-wider opacity-60 flex items-center gap-1.5 pl-0.5 text-slate-500">
+                <span className="w-1 h-3 rounded-full bg-primary" />
+                Delivery Personalization
+              </h5>
+              <div className="flex items-center gap-2">
+                <div className="relative group">
+                  <input
+                    type="date"
+                    value={expiryDate}
+                    onChange={(e) => setExpiryDate(e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  />
+                  <Calendar className={`w-4 h-4 cursor-pointer ${expiryDate ? 'text-primary' : 'text-slate-500'} hover:text-primary`} />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpiryDate("")}
+                  className="text-[9px] font-bold text-primary hover:text-primary-container"
+                >
+                  No Limit
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {/* Option 1: Free Delivery */}
+              <div className={`p-3 rounded-lg flex items-center justify-between border ${
+                darkMode ? 'bg-zinc-900/40 border-white/5' : 'bg-slate-50 border-slate-150'
+              }`}>
+                <div>
+                  <div className="text-[11px] font-bold text-on-surface">Free Delivery</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">Always free delivery for this customer.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVal = !isFreeDel;
+                    setIsFreeDel(nextVal);
+                    if (nextVal) {
+                      setCustomFeeActive(false);
+                    }
+                  }}
+                  className={`w-9 h-5 rounded-full transition-colors relative flex items-center ${
+                    isFreeDel ? 'bg-emerald-500' : (darkMode ? 'bg-zinc-750' : 'bg-slate-200')
+                  }`}
+                  aria-label="Toggle Free Delivery"
+                >
+                  <span className={`w-3.5 h-3.5 rounded-full bg-white shadow-xs transition-transform absolute ${
+                    isFreeDel ? 'translate-x-4.5' : 'translate-x-0.5'
+                  }`} />
+                </button>
+              </div>
+
+              {/* Option 2: Custom Override Fee */}
+              <div className={`p-3 rounded-lg border ${
+                darkMode ? 'bg-zinc-900/40 border-white/5' : 'bg-slate-50 border-slate-150'
+              } ${isFreeDel ? 'opacity-45 select-none' : ''}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-bold text-on-surface">Custom Delivery Fee</div>
+                    <div className="text-[9px] text-slate-400 mt-0.5">Define a specific delivery fee for this customer.</div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isFreeDel}
+                    onClick={() => setCustomFeeActive(!customFeeActive)}
+                    className={`w-9 h-5 rounded-full transition-colors relative flex items-center ${
+                      customFeeActive && !isFreeDel ? 'bg-primary' : (darkMode ? 'bg-zinc-750' : 'bg-slate-200')
+                    }`}
+                    aria-label="Toggle Custom Delivery Fee"
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full bg-white shadow-xs transition-transform absolute ${
+                      customFeeActive && !isFreeDel ? 'translate-x-4.5' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </div>
+
+                {/* Custom Fee Input block */}
+                {customFeeActive && !isFreeDel && (
+                  <div className="mt-3 pt-3 border-t border-on-surface/5 animate-fade-in space-y-2">
+                    <label className="text-[10px] font-semibold text-slate-400 block">Delivery Fee ({currency})</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        placeholder="e.g. 1500"
+                        value={customFeeVal}
+                        onChange={(e) => setCustomFeeVal(e.target.value)}
+                        className={`w-full py-1.5 pl-3 pr-10 text-xs font-bold rounded-lg border focus:ring-1 focus:ring-primary focus:outline-hidden ${
+                          darkMode 
+                            ? 'bg-zinc-950 border-white/10 text-on-surface focus:border-primary/50' 
+                            : 'bg-white border-slate-250 text-slate-900 focus:border-primary'
+                        }`}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 select-none">
+                        {currency}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Save Button */}
+              <button
+                type="button"
+                onClick={handleSaveDeliverySettings}
+                disabled={savingDelivery}
+                className="w-full py-2.5 rounded-xl text-[10px] sm:text-xs uppercase tracking-wider font-extrabold text-white bg-primary hover:bg-primary-container active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 shadow-md shadow-primary/10 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+              >
+                {savingDelivery ? 'Saving...' : 'Save'}
+              </button>
             </div>
           </div>
 
@@ -4245,10 +4419,7 @@ function CustomerDetailsView({
         </div>
 
         {/* COLUMN 2: Order logs history list (Right side) */}
-        <div 
-          className="lg:col-span-8 flex flex-col space-y-4 lg:min-h-0"
-          style={isDesktop && leftColHeight ? { height: `${leftColHeight}px` } : {}}
-        >
+        <div className="lg:col-span-7 flex flex-col space-y-4 lg:min-h-0 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] pb-4">
           
           {/* Advanced filter pane */}
           <div className={`p-5 rounded-xl border space-y-4 ${
@@ -4315,7 +4486,7 @@ function CustomerDetailsView({
           </div>
 
           {/* Ledger transaction Cards list */}
-          <div className="lg:flex-1 lg:min-h-0 overflow-y-auto no-scrollbar space-y-4 pb-12 pr-1 max-h-[75vh] lg:max-h-none">
+          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-4 pb-12 pr-1 max-h-[75vh] lg:max-h-none">
             {filteredOrders.length > 0 ? (
               filteredOrders.map((order) => {
                 const formattedDate = parseOrderDate(order.createdAt, order.timestamp).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur", dateStyle: "medium", timeStyle: "short" });
@@ -4454,7 +4625,7 @@ function CustomerDetailsView({
                                   darkMode 
                                     ? "bg-zinc-950/40 border-white/5" 
                                     : "bg-white border-slate-200"
-                                }`}
+                                } ${item.isCancelled ? 'opacity-50 grayscale' : ''}`}
                               >
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   {item.image ? (
@@ -4471,21 +4642,28 @@ function CustomerDetailsView({
                                       <ShoppingBag size={14} className="opacity-40 text-primary" />
                                     </div>
                                   )}
-                                  <div className="min-w-0">
-                                    <p className="font-bold text-[11.5px] text-on-surface truncate leading-tight">
+                                  <div className="min-w-0 flex flex-col items-start gap-0.5">
+                                    <p className={`font-bold text-[11.5px] text-on-surface truncate leading-tight ${item.isCancelled ? 'line-through text-on-surface/60' : ''}`}>
                                       {item.name}
                                     </p>
-                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest bg-on-surface/5 px-1.5 py-0.2 rounded mt-0.5 inline-block">
-                                      {item.category || "General"}
-                                    </span>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest bg-on-surface/5 px-1.5 py-0.2 rounded inline-block">
+                                        {item.category || "General"}
+                                      </span>
+                                      {item.isCancelled && (
+                                        <span className="text-[8px] font-bold text-rose-500 uppercase tracking-wider bg-rose-500/10 px-1.5 py-0.2 rounded inline-block">
+                                          Cancelled
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                                 
                                 <div className="text-right shrink-0 flex items-center gap-4 font-medium">
-                                  <span className="text-[11px] text-slate-450">
+                                  <span className={`text-[11px] text-slate-450 ${item.isCancelled ? 'line-through' : ''}`}>
                                     Qty: <span className="font-bold text-on-surface">{item.quantity}</span>
                                   </span>
-                                  <span className="font-bold text-[11px] text-on-surface min-w-[55px] text-right">
+                                  <span className={`font-bold text-[11px] text-on-surface min-w-[55px] text-right ${item.isCancelled ? 'line-through text-on-surface/60' : ''}`}>
                                     {formatPrice(item.price)}
                                   </span>
                                 </div>
@@ -4580,66 +4758,11 @@ function CustomerDetailsView({
 
       </div>
 
-      {/* Profile Image View Zoom (WhatsApp-style: no background dim/blur, square card with drop shadow) */}
-      <AnimatePresence>
-        {showImagePreview && customer.avatar && (
-          <>
-            {/* Transparent backdrop for dismissal */}
-            <div
-              className="absolute inset-0 z-30 cursor-zoom-out bg-black/0"
-              onClick={() => setShowImagePreview(false)}
-            />
-
-            {/* Float Popover Card at the Center-Top of Customer Details */}
-            <div className="absolute inset-x-0 top-10 z-40 pointer-events-none flex justify-center px-4 font-sans">
-              <motion.div
-                initial={{ scale: 0.85, y: -10, opacity: 0 }}
-                animate={{ scale: 1, y: 0, opacity: 1 }}
-                exit={{ scale: 0.85, y: -10, opacity: 0 }}
-                transition={{ type: "spring", damping: 25, stiffness: 350 }}
-                className={`w-72 sm:w-80 h-72 sm:h-80 rounded-2xl pointer-events-auto overflow-hidden relative shadow-[0_20px_60px_rgba(0,0,0,0.3)] border ${
-                  darkMode ? "bg-zinc-900 border-white/10" : "bg-white border-slate-200"
-                }`}
-              >
-                {/* Image filling the entire square profile popup */}
-                <img
-                  src={customer.avatar}
-                  alt={customer.name || "Customer"}
-                  className="w-full h-full object-cover select-none"
-                  referrerPolicy="no-referrer"
-                />
-
-                {/* Top Overlay Bar containing Name & Close Button (WhatsApp style) */}
-                <div className="absolute top-0 inset-x-0 p-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent flex items-center justify-between text-white">
-                  <span className="font-bold text-sm tracking-wide line-clamp-1 truncate pr-2 select-none shadow-sm">
-                    {customer.name || "Customer"}
-                  </span>
-                  <button
-                    onClick={() => setShowImagePreview(false)}
-                    className="p-1 px-2 text-white/90 hover:text-white bg-black/20 hover:bg-black/40 rounded-lg transition-colors focus:outline-none text-xs font-black uppercase tracking-wider"
-                    aria-label="Close"
-                  >
-                    Close
-                  </button>
-                </div>
-
-                {/* Subtitle/Email banner overlay at the bottom */}
-                {customer.email && (
-                  <div className="absolute bottom-0 inset-x-0 p-2 text-center bg-black/60 backdrop-blur-[2px]">
-                    <span className="text-[10px] text-white/80 font-mono tracking-tight select-all">
-                      {customer.email}
-                    </span>
-                  </div>
-                )}
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
 
     </div>
   );
 }
+
 
 
 function UsersTab({
@@ -4663,14 +4786,7 @@ function UsersTab({
 
 
   const getPhoneGroupKey = (phone: string) => {
-    if (!phone) return "";
-    let cleaned = phone.replace(/\D/g, "");
-    if (cleaned.startsWith("09")) {
-      cleaned = "95" + cleaned.substring(1);
-    } else if (cleaned.startsWith("01")) {
-      cleaned = "60" + cleaned.substring(1);
-    }
-    return cleaned;
+    return normalizePhone(phone);
   };
 
   const groupedUsers = React.useMemo(() => {
@@ -4758,9 +4874,16 @@ function UsersTab({
   }, [groupedUsers, globalSearch]);
 
   if (selectedCustomer) {
+    const activeCustomer = groupedUsers.find(
+      (u) =>
+        u.id === selectedCustomer.id ||
+        u.uid === selectedCustomer.uid ||
+        (u.phone && selectedCustomer.phone && u.phone === selectedCustomer.phone)
+    ) || selectedCustomer;
+
     return (
       <CustomerDetailsView
-        customer={selectedCustomer}
+        customer={activeCustomer}
         orders={orders}
         darkMode={darkMode}
         onClose={() => setSelectedCustomer(null)}
@@ -4895,11 +5018,14 @@ function UsersTab({
                   <span>Joined:</span>
                   <span className="font-semibold text-[8.5px]">
                     {user.createdAt ? (
-                      typeof user.createdAt === 'string' 
-                        ? (user.createdAt.includes('T') || user.createdAt.includes('-') 
-                            ? new Date(user.createdAt).toLocaleDateString('en-MY', { timeZone: "Asia/Kuala_Lumpur", month: 'short', year: 'numeric' }) 
-                            : user.createdAt) 
-                        : new Date(user.createdAt).toLocaleDateString('en-MY', { timeZone: "Asia/Kuala_Lumpur", month: 'short', year: 'numeric' })
+                      parseOrderDate(user.createdAt).toLocaleString('en-MY', { 
+                        timeZone: "Asia/Kuala_Lumpur", 
+                        month: 'short', 
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })
                     ) : 'New'}
                   </span>
                 </div>
@@ -6052,10 +6178,13 @@ export default function AdminDashboard() {
         },
       );
       const itemsSubtotal = order.items.reduce(
-        (acc, item) => acc + (Number(item.price) || 0) * (item.quantity || 1),
+        (acc, item) => acc + (item.isCancelled ? 0 : (Number(item.price) || 0) * (item.quantity || 1)),
         0,
       );
-      const docTotal = Number(order.total) || Number(order.totalAmount) || (itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0));
+      const hasCancelled = order.items.some(item => item.isCancelled);
+      const docTotal = hasCancelled 
+        ? Math.max(0, itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0))
+        : (Number(order.total) || Number(order.totalAmount) || Math.max(0, itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0)));
 
       // --- NEW PROFESSIONAL DESIGN ---
 
@@ -6126,10 +6255,10 @@ export default function AdminDashboard() {
       // Items Table
       const itemsData = order.items.map((item, index) => [
         String(index + 1).padStart(2, '0'),
-        item.name,
+        item.isCancelled ? `${item.name} (Cancelled)` : item.name,
         formatPrice(item.price),
         item.quantity.toString(),
-        formatPrice(item.price * item.quantity),
+        item.isCancelled ? formatPrice(0) : formatPrice(item.price * item.quantity),
       ]);
 
       autoTable(doc, {
@@ -6256,10 +6385,13 @@ export default function AdminDashboard() {
       }
 
       const itemsSubtotal = order.items.reduce(
-        (acc, item) => acc + (Number(item.price) || 0) * (item.quantity || 1),
+        (acc, item) => acc + (item.isCancelled ? 0 : (Number(item.price) || 0) * (item.quantity || 1)),
         0,
       );
-      const printTotal = Number(order.total) || Number(order.totalAmount) || (itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0));
+      const hasCancelled = order.items.some(item => item.isCancelled);
+      const printTotal = hasCancelled 
+        ? Math.max(0, itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0))
+        : (Number(order.total) || Number(order.totalAmount) || Math.max(0, itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0)));
 
       const invoiceDate = parseOrderDate(order.createdAt, order.timestamp).toLocaleDateString(
         "en-MY",
@@ -6357,10 +6489,10 @@ export default function AdminDashboard() {
                     (item) => `
                   <tr class="item-row">
                     <td>
-                      <div class="item-name">${item.name}</div>
+                      <div class="item-name" style="${item.isCancelled ? 'text-decoration: line-through;' : ''}">${item.name}${item.isCancelled ? ' (Cancelled)' : ''}</div>
                       <div class="item-details">${item.quantity} x ${formatPrice(item.price)}</div>
                     </td>
-                    <td class="item-price">${formatPrice(item.price * item.quantity)}</td>
+                    <td class="item-price" style="${item.isCancelled ? 'text-decoration: line-through;' : ''}">${item.isCancelled ? formatPrice(0) : formatPrice(item.price * item.quantity)}</td>
                   </tr>
                 `,
                   )
@@ -6392,18 +6524,21 @@ export default function AdminDashboard() {
       } else if (format === "a4") {
         const itemsHtml = order.items
           .map(
-            (item, index) => `
+            (item, index) => {
+              const IsCancelledItem = !!item.isCancelled;
+              return `
           <tr style="border-bottom: 1px solid #ddd;">
             <td style="padding: 10px 5px; text-align: center; font-size: 13px;">${index + 1}</td>
             <td style="padding: 10px 10px; text-align: left;">
-              <div style="font-weight: 700; font-size: 14px;">${item.name}</div>
+              <div style="font-weight: 700; font-size: 14px; ${IsCancelledItem ? 'text-decoration: line-through;' : ''}">${item.name}${IsCancelledItem ? ' (Cancelled)' : ''}</div>
               <div style="font-size: 11px; color: #555;">${item.mmName || ""}</div>
             </td>
             <td style="padding: 10px 10px; text-align: right; font-family: monospace; font-size: 13px;">${formatPrice(item.price)}</td>
             <td style="padding: 10px 5px; text-align: center; font-weight: 700; font-size: 13px;">${item.quantity}</td>
-            <td style="padding: 10px 10px; text-align: right; font-weight: 900; font-family: monospace; font-size: 14px;">${formatPrice(item.price * item.quantity)}</td>
+            <td style="padding: 10px 10px; text-align: right; font-weight: 900; font-family: monospace; font-size: 14px; ${IsCancelledItem ? 'text-decoration: line-through;' : ''}">${IsCancelledItem ? formatPrice(0) : formatPrice(item.price * item.quantity)}</td>
           </tr>
-        `,
+        `;
+            }
           )
           .join("");
 
@@ -6607,13 +6742,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (selectedOrder && (isOrderModalOpen || activeOrderView === 'details')) {
       const updatedOrder = orders.find((o) => o.id === selectedOrder.id);
-      if (
-        updatedOrder &&
-        (updatedOrder.status !== selectedOrder.status ||
-          updatedOrder.deliveryStatus !== selectedOrder.deliveryStatus ||
-          updatedOrder.assignedTo !== selectedOrder.assignedTo ||
-          updatedOrder.paymentScreenshot !== selectedOrder.paymentScreenshot)
-      ) {
+      if (updatedOrder && JSON.stringify(updatedOrder) !== JSON.stringify(selectedOrder)) {
         setSelectedOrder(updatedOrder);
       }
     }

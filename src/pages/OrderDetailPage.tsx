@@ -143,10 +143,13 @@ export default function OrderDetailPage() {
       const doc = new jsPDF();
       const invoiceDate = new Date(order.timestamp).toLocaleDateString("en-MY", { timeZone: "Asia/Kuala_Lumpur" });
       const itemsSubtotal = order.items.reduce(
-        (acc, item) => acc + (Number(item.price) || 0) * (item.quantity || 1),
+        (acc, item) => acc + (item.isCancelled ? 0 : (Number(item.price) || 0) * (item.quantity || 1)),
         0,
       );
-      const orderTotal = Number(order.total) || Number(order.totalAmount) || (itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0));
+      const hasCancelledItems = order.items.some(item => item.isCancelled);
+      const orderTotal = hasCancelledItems 
+        ? Math.max(0, itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0))
+        : (Number(order.total) || Number(order.totalAmount) || Math.max(0, itemsSubtotal + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0)));
 
       // --- Header Section ---
       doc.setTextColor(0, 0, 0);
@@ -228,10 +231,10 @@ export default function OrderDetailPage() {
 
       // --- Items Table ---
       const itemsData = order.items.map((item) => [
-        item.name,
+        item.isCancelled ? `${item.name} (${t('cancelled') || 'Cancelled'})` : item.name,
         formatPrice(item.price),
         item.quantity.toString(),
-        formatPrice(item.price * (item.quantity || 1)),
+        item.isCancelled ? formatPrice(0) : formatPrice(item.price * (item.quantity || 1)),
       ]);
 
       const tableStartY = Math.max(115, billY + 10);
@@ -346,8 +349,13 @@ export default function OrderDetailPage() {
     }
   };
 
-  const itemsSubtotalUI = order?.items?.reduce((acc: number, item: any) => acc + (Number(item.price) || 0) * (item.quantity || 1), 0) || 0;
-  const orderTotalUI = order ? (Number(order.total) || Number(order.totalAmount) || (itemsSubtotalUI + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0))) : 0;
+  const itemsSubtotalUI = order?.items?.reduce((acc: number, item: any) => acc + (item.isCancelled ? 0 : (Number(item.price) || 0) * (item.quantity || 1)), 0) || 0;
+  const hasCancelledItemsUI = order?.items?.some((item: any) => item.isCancelled) || false;
+  const orderTotalUI = order 
+    ? (hasCancelledItemsUI 
+        ? Math.max(0, itemsSubtotalUI + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0))
+        : (Number(order.total) || Number(order.totalAmount) || Math.max(0, itemsSubtotalUI + (Number(order.deliveryFee) || 0) - (Number(order.pointDiscount) || 0))))
+    : 0;
 
   return (
     <div className={`min-h-screen pb-24 font-sans selection:bg-primary/20 ${darkMode ? 'bg-surface text-on-surface' : 'bg-[#F8FAFC]'}`}>
@@ -467,20 +475,41 @@ export default function OrderDetailPage() {
           </div>
 
           <div className="space-y-4">
-            {order.items.map((item, idx) => (
-              <div key={idx} className="flex gap-4 items-center">
-                <div className={`w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
-                  <img src={item.image} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                </div>
-                <div className="flex-grow">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-on-surface leading-tight">{getMainName(item)}</h4>
-                    <p className="text-xs font-black text-primary ml-4">{formatPrice(item.price * item.quantity)}</p>
+            {order.items.map((item, idx) => {
+              const isItemCancelled = !!item.isCancelled;
+              return (
+                <div key={idx} className={`flex gap-4 items-center ${isItemCancelled ? 'opacity-40' : ''}`}>
+                  <div className={`relative w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 border ${darkMode ? 'bg-surface-container-highest border-on-surface/5' : 'bg-slate-50 border-slate-100'}`}>
+                    <img src={item.image} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    {isItemCancelled && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <span className="text-[8px] font-bold text-white uppercase tracking-tighter">Cancelled</span>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[9px] font-bold text-on-surface-variant/60 mt-0.5">{getSecondaryName(item)} • Qty: {item.quantity}</p>
+                  <div className="flex-grow min-w-0">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="min-w-0">
+                        <h4 className={`text-xs font-bold leading-tight truncate ${isItemCancelled ? 'line-through text-on-surface-variant/70' : 'text-on-surface'}`}>
+                          {getMainName(item)}
+                        </h4>
+                        {isItemCancelled && (
+                          <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest mt-0.5 block">
+                            {t('cancelled') || 'ဖျက်ပြီး'} / {t('outOfStock') || 'ပစ္စည်းမရှိ'}
+                          </span>
+                        )}
+                      </div>
+                      <p className={`text-xs font-black shrink-0 ${isItemCancelled ? 'line-through text-rose-500/70' : 'text-primary'}`}>
+                        {formatPrice(item.price * item.quantity)}
+                      </p>
+                    </div>
+                    <p className="text-[9px] font-bold text-on-surface-variant/60 mt-0.5">
+                      {getSecondaryName(item)} • Qty: {item.quantity}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="mt-6 pt-4 border-t border-on-surface/10 space-y-3">
