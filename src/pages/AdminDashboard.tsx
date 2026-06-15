@@ -3006,7 +3006,7 @@ function CategoriesTab({
   };
 
   const handleDeleteCategory = (cat: any) => {
-    const productsInCat = products.filter(p => p.category === cat.key).length;
+    const productsInCat = products.filter(p => p.category === cat.id).length;
     if (productsInCat > 0) {
       toast.error(`Cannot delete category with ${productsInCat} products.`);
       return;
@@ -3373,7 +3373,7 @@ function CategoriesTab({
                                 {cat.key}
                               </p>
                               <span className={`text-[7px] font-black px-1.5 py-0.5 rounded ${darkMode ? "bg-white/5 text-white/40" : "bg-gray-100 text-gray-500"}`}>
-                                {products.filter(p => p.category === cat.key).length} Items
+                                {products.filter(p => p.category === cat.id).length} Items
                               </span>
                             </div>
                           </div>
@@ -4568,7 +4568,7 @@ function CustomerDetailsView({
                               Breakdown
                             </p>
                             <p className={`font-bold text-xs ${darkMode ? "text-on-surface" : "text-slate-700"}`}>
-                              {order.items?.length || 0} items
+                              {order.items?.filter((i: any) => !i.isCancelled).length || 0} items
                             </p>
                           </div>
                           
@@ -4612,7 +4612,7 @@ function CustomerDetailsView({
                               {t("order_items") || "Ordered Items"}
                             </span>
                             <span className="text-[10px] font-mono opacity-50 bg-on-surface/5 px-2 py-0.5 rounded-md">
-                              {order.items?.length || 0} {order.items?.length === 1 ? "item" : "items"}
+                              {order.items?.filter((i: any) => !i.isCancelled).length || 0} {order.items?.filter((i: any) => !i.isCancelled).length === 1 ? "item" : "items"}
                             </span>
                           </div>
 
@@ -6755,13 +6755,13 @@ export default function AdminDashboard() {
     if (selectedDateFilter.start)
       result = result.filter(
         (o) =>
-          parseOrderDate(o.createdAt, o.timestamp).toISOString().split("T")[0] >=
+          parseOrderDate(o.createdAt, o.timestamp).toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" }) >=
           selectedDateFilter.start,
       );
     if (selectedDateFilter.end)
       result = result.filter(
         (o) =>
-          parseOrderDate(o.createdAt, o.timestamp).toISOString().split("T")[0] <=
+          parseOrderDate(o.createdAt, o.timestamp).toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" }) <=
           selectedDateFilter.end,
       );
 
@@ -7008,6 +7008,7 @@ export default function AdminDashboard() {
 
       if (!grouped[dateKey]) grouped[dateKey] = {};
       order.items.forEach((item) => {
+        if (item.isCancelled) return;
         if (!grouped[dateKey][item.id]) {
           grouped[dateKey][item.id] = {
             id: item.id,
@@ -7899,7 +7900,7 @@ export default function AdminDashboard() {
                                 {formatPrice(order.total)}
                               </p>
                               <p className="text-[8px] uppercase tracking-[0.2em] opacity-30 font-black">
-                                {order.items.length} items
+                                {order.items.filter((i: any) => !i.isCancelled).length} items
                               </p>
                             </div>
 

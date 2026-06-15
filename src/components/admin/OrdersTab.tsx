@@ -349,7 +349,7 @@ export default function OrdersTab({ orders, darkMode, formatPrice, t, updateStat
                         })()}
                       </p>
                       <p className="text-[13px] font-black opacity-40 uppercase tracking-[0.25em] mt-3">
-                        {order.items.length} Items Total
+                        {order.items.filter((i: any) => !i.isCancelled).length} Items Total
                       </p>
                     </div>
  

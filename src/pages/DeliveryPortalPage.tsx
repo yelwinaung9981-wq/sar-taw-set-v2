@@ -541,7 +541,7 @@ export default function DeliveryPortalPage() {
                     <div className={`flex items-center justify-between ${expandedOrderId === order.id ? 'py-3 border-t border-dashed mt-2' : ''}`}>
                       <div className="flex items-center gap-1.5 text-[8px] font-black uppercase tracking-widest opacity-40">
                         <Package size={12} />
-                        <span>{order.items.length} {order.items.length === 1 ? 'PKG' : 'PKGS'}</span>
+                        <span>{order.items.filter((i: any) => !i.isCancelled).length} {order.items.filter((i: any) => !i.isCancelled).length === 1 ? 'PKG' : 'PKGS'}</span>
                       </div>
                       <div className="text-right">
                         <p className="text-[11px] font-black text-blue-600 tracking-tight">

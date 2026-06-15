@@ -470,7 +470,7 @@ export default function OrderDetailPage() {
               {t('orderSummary')}
             </h3>
             <span className={`text-[10px] font-black px-2 py-1 rounded-lg uppercase tracking-widest ${darkMode ? 'bg-surface-container-highest text-on-surface-variant' : 'bg-slate-100 text-slate-500'}`}>
-              {order.items.length} {t('items')}
+              {order.items.filter((i: any) => !i.isCancelled).length} {t('items')}
             </span>
           </div>
 

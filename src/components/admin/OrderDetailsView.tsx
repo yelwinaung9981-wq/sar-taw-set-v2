@@ -431,7 +431,7 @@ export default function OrderDetailsView({
                 : "bg-white border border-gray-100 text-gray-400 shadow-sm uppercase tracking-tighter"
             }`}
           >
-            {order.items.length} Unique Items
+            {order.items.filter((i: any) => !i.isCancelled).length} Unique Items
           </span>
         </div>
 

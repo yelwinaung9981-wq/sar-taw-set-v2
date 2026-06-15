@@ -122,7 +122,7 @@ export default function OrdersPage() {
                     <div className="text-right">
                       <p className="text-sm font-black text-primary">{formatPrice(order.total)}</p>
                       <p className="text-[10px] font-bold text-on-surface-variant mt-0.5">
-                        {order.items?.length || 0} {t('items')}
+                        {order.items?.filter((i: any) => !i.isCancelled).length || 0} {t('items')}
                       </p>
                     </div>
                   </div>

@@ -1326,18 +1326,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toast.error('Daily limit reached. Cannot add category.');
       return;
     }
+
+    // Sanitize new category object to remove undefined values
+    const cleanCategory = Object.entries(category).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as any);
+
     try {
-      const id = category.key.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      const id = cleanCategory.key.toLowerCase().replace(/[^a-z0-9]/g, '-');
       
       // Optimistic add
       setCategories(prev => {
-        const next = [...prev, { ...category, id }];
+        const next = [...prev, { ...cleanCategory, id }];
         localStorage.setItem('sp_categories', JSON.stringify(next));
         setCacheTime('categories');
         return next;
       });
 
-      await setDoc(doc(db, 'categories', id), { ...category, id });
+      await setDoc(doc(db, 'categories', id), { ...cleanCategory, id });
       toast.success('Category added');
     } catch (error) {
       toast.error('Failed to add category');
@@ -1993,7 +2002,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const adminOrdersQuery = query(
         collection(db, 'orders'), 
         orderBy('createdAt', 'desc'),
-        limit(100)
+        limit(1000)
       );
       let initialLoad = true;
 
@@ -3643,6 +3652,15 @@ ${itemsList}
 
   const addPromotionBanner = async (banner: Omit<PromotionBanner, 'id' | 'priority'>) => {
     if (getIsQuotaExceeded()) return;
+    
+    // Sanitize to remove undefined values
+    const cleanBanner = Object.entries(banner).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as any);
+
     try {
       // Auto-calculate priority to make it appear first by default
       // Higher priority = earlier in the list
@@ -3651,7 +3669,7 @@ ${itemsList}
         : 0;
 
       await addDoc(collection(db, 'promotionBanners'), {
-        ...banner,
+        ...cleanBanner,
         priority: maxPriority + 1
       });
     } catch (error) {
@@ -3710,8 +3728,17 @@ ${itemsList}
 
   const addDeal = async (deal: Omit<Deal, 'id'>) => {
     if (getIsQuotaExceeded()) return;
+    
+    // Sanitize to remove undefined values
+    const cleanDeal = Object.entries(deal).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as any);
+
     try {
-      await addDoc(collection(db, 'deals'), deal);
+      await addDoc(collection(db, 'deals'), cleanDeal);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'deals');
     }
@@ -3746,8 +3773,17 @@ ${itemsList}
 
   const addBundle = async (bundle: Omit<Bundle, 'id'>) => {
     if (getIsQuotaExceeded()) return;
+    
+    // Sanitize to remove undefined values
+    const cleanBundle = Object.entries(bundle).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as any);
+
     try {
-      await addDoc(collection(db, 'bundles'), bundle);
+      await addDoc(collection(db, 'bundles'), cleanBundle);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'bundles');
     }
