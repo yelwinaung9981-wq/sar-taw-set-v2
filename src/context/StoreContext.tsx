@@ -1087,30 +1087,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           // 1. Add local addresses from current memory state
           prev.forEach(addr => {
-            const key = [
-              addr.phone,
-              addr.township,
-              addr.street,
-              addr.building,
-              addr.room
-            ].map(v => (v || '').toString().toLowerCase().trim().replace(/\s+/g, '')).join('|');
-            uniqueItems.set(key, addr);
+            if (addr.id) uniqueItems.set(addr.id, addr);
           });
 
           // 2. Overwrite or add addresses fetched from Firestore
           fetchedAddresses.forEach(addr => {
-            const key = [
-              addr.phone,
-              addr.township,
-              addr.street,
-              addr.building,
-              addr.room
-            ].map(v => (v || '').toString().toLowerCase().trim().replace(/\s+/g, '')).join('|');
-
-            // If the key is not present, or if Firestore address is default whereas local is not, prioritize Firestore
-            if (!uniqueItems.has(key) || (addr.isDefault && !uniqueItems.get(key)?.isDefault)) {
-              uniqueItems.set(key, addr);
-            }
+            if (addr.id) uniqueItems.set(addr.id, addr);
           });
 
           const mergedAddresses = Array.from(uniqueItems.values());

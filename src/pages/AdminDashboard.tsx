@@ -3564,6 +3564,33 @@ function CustomerDetailsView({
   const [expiryDate, setExpiryDate] = React.useState<string>(customer.deliverySettingsExpiry ? new Date(customer.deliverySettingsExpiry).toISOString().split('T')[0] : "");
   const [savingDelivery, setSavingDelivery] = React.useState(false);
   
+  const [editingAddressId, setEditingAddressId] = React.useState<string | null>(null);
+  const [addressForm, setAddressForm] = React.useState<any>({});
+
+  const handleEditAddress = (addr: any) => {
+    setEditingAddressId(addr.id);
+    setAddressForm(addr);
+  };
+
+  const handleSaveAddress = async () => {
+    if (!addressForm.userId || !addressForm.id) return;
+    try {
+      const { doc, updateDoc } = await import("firebase/firestore");
+      const { db } = await import("../lib/firebase");
+      const updates = { ...addressForm };
+      delete updates.id;
+      delete updates.userId;
+      
+      await updateDoc(doc(db, "users", addressForm.userId, "addresses", addressForm.id), updates);
+      toast.success("Address updated successfully");
+      setCustomerAddresses(prev => prev.map(a => a.id === addressForm.id ? { ...a, ...addressForm } : a));
+      setEditingAddressId(null);
+    } catch (e) {
+      toast.error("Failed to update address");
+      console.error(e);
+    }
+  };
+  
   const { formatPrice, t, updateOrderStatus, updateUserDeliverySettings, currency } = useStore();
 
   React.useEffect(() => {
@@ -4259,7 +4286,7 @@ function CustomerDetailsView({
                 <p className="text-[9px] text-slate-500 mt-1 max-w-[200px] mx-auto leading-relaxed text-center">This customer has not saved any delivery addresses yet.</p>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[280px] overflow-y-auto no-scrollbar pr-1">
+              <div className="space-y-3 max-h-[350px] overflow-y-auto no-scrollbar pr-1">
                 {customerAddresses.map((addr) => (
                   <div 
                     key={addr.id}
@@ -4269,51 +4296,139 @@ function CustomerDetailsView({
                         : (darkMode ? "bg-zinc-900/60 border-white/5" : "bg-slate-50 border-slate-150")
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <div className="flex items-center gap-1.5">
-                        {addr.label === "Home" ? (
-                          <Home size={12} className="text-primary" />
-                        ) : addr.label === "Office" ? (
-                          <Briefcase size={12} className="text-primary" />
-                        ) : (
-                          <MapPin size={12} className="text-primary" />
-                        )}
-                        <span className={`font-bold text-[10px] uppercase tracking-wider ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
-                          {addr.label || "Address"}
-                        </span>
-                        {addr.isDefault && (
-                          <span className="px-1.5 py-0.2 rounded bg-primary text-white text-[8px] font-bold uppercase tracking-widest">
-                            Default
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className={`space-y-1 leading-relaxed font-semibold`}>
-                      <p className={`text-[11px] font-semibold ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Recipient: <span className={`font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{addr.name || customer.name}</span></p>
-                      <p className={`text-[11px] font-semibold ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Phone: <span className={`font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{addr.phone || customer.phone}</span></p>
-                      <p className={`text-[11.5px] font-bold mt-1 leading-normal ${darkMode ? "text-slate-200" : "text-slate-800"}`}>
-                        {addr.room ? `${addr.room}, ` : ""}
-                        {addr.building ? `${addr.building}, ` : ""}
-                        {addr.street}, {addr.township}, {addr.city}, {addr.region}
-                      </p>
-                    </div>
+                    {editingAddressId === addr.id ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between pb-2 border-b border-on-surface/5">
+                          <span className={`font-bold text-[10px] uppercase tracking-wider text-primary`}>Edit Address</span>
+                          <div className="flex gap-3">
+                             <button onClick={() => setEditingAddressId(null)} className="text-[10px] uppercase font-bold opacity-60 hover:opacity-100 transition-opacity">Cancel</button>
+                             <button onClick={handleSaveAddress} className="text-[10px] uppercase font-bold text-primary hover:text-primary-container transition-colors">Save</button>
+                          </div>
+                        </div>
+                        <div className="space-y-2.5">
+                          <div className="space-y-1">
+                            <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>Name</label>
+                            <div className={`w-full h-8 rounded-xl overflow-hidden transition-all ${darkMode ? 'bg-[#181A1B]' : 'bg-white border shadow-sm'}`}>
+                              <input type="text" value={addressForm.name || ''} onChange={e => setAddressForm({...addressForm, name: e.target.value})} placeholder="Enter recipient's name" className={`w-full h-full text-[12px] font-medium px-3 bg-transparent outline-none border-none placeholder-zinc-400 placeholder:italic focus:ring-0 ${darkMode ? 'text-white' : 'text-[#111111]'}`} />
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-1">
+                            <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>Phone number</label>
+                            <div className={`w-full h-8 rounded-xl overflow-hidden transition-all ${darkMode ? 'bg-[#181A1B]' : 'bg-white border shadow-sm'}`}>
+                              <input type="tel" value={addressForm.phone || ''} onChange={e => setAddressForm({...addressForm, phone: e.target.value})} placeholder="Enter phone number" className={`w-full h-full text-[12px] font-medium px-3 bg-transparent outline-none border-none placeholder-zinc-400 placeholder:italic focus:ring-0 ${darkMode ? 'text-white' : 'text-[#111111]'}`} />
+                            </div>
+                          </div>
 
-                    {addr.latitude && addr.longitude && (
-                      <div className="mt-2 pt-2 border-t border-on-surface/5 flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-mono text-slate-500">
-                          {addr.latitude.toFixed(5)}, {addr.longitude.toFixed(5)}
-                        </span>
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${addr.latitude},${addr.longitude}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[9px] font-bold text-primary flex items-center gap-1 hover:underline shrink-0"
-                        >
-                          <MapPin size={9} />
-                          Map View
-                        </a>
+                          <div className="space-y-1">
+                            <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>Address</label>
+                            <div className={`w-full h-8 rounded-xl overflow-hidden transition-all ${darkMode ? 'bg-[#181A1B]' : 'bg-white border shadow-sm'}`}>
+                              <input type="text" value={addressForm.street || ''} onChange={e => setAddressForm({...addressForm, street: e.target.value})} placeholder="E.g. No. 12, Jalan SS21/37, Damansara Utama" className={`w-full h-full text-[12px] font-medium px-3 bg-transparent outline-none border-none placeholder-zinc-400 placeholder:italic focus:ring-0 ${darkMode ? 'text-white' : 'text-[#111111]'}`} />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>City</label>
+                            <div className={`w-full h-8 rounded-xl overflow-hidden transition-all ${darkMode ? 'bg-[#181A1B]' : 'bg-white border shadow-sm'}`}>
+                              <input type="text" value={addressForm.city || ''} onChange={e => setAddressForm({...addressForm, city: e.target.value})} placeholder="E.g. Petaling Jaya" className={`w-full h-full text-[12px] font-medium px-3 bg-transparent outline-none border-none placeholder-zinc-400 placeholder:italic focus:ring-0 ${darkMode ? 'text-white' : 'text-[#111111]'}`} />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>State</label>
+                                <div className={`w-full h-8 rounded-xl overflow-hidden transition-all ${darkMode ? 'bg-[#181A1B]' : 'bg-white border shadow-sm'}`}>
+                                  <input type="text" value={addressForm.region || ''} onChange={e => setAddressForm({...addressForm, region: e.target.value})} placeholder="E.g. Selangor" className={`w-full h-full text-[12px] font-medium px-3 bg-transparent outline-none border-none placeholder-zinc-400 placeholder:italic focus:ring-0 ${darkMode ? 'text-white' : 'text-[#111111]'}`} />
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>Postcode</label>
+                                <div className={`w-full h-8 rounded-xl overflow-hidden transition-all ${darkMode ? 'bg-[#181A1B]' : 'bg-white border shadow-sm'}`}>
+                                  <input type="text" value={addressForm.township || ''} onChange={e => setAddressForm({...addressForm, township: e.target.value})} placeholder="E.g. 47300" className={`w-full h-full text-[12px] font-medium px-3 bg-transparent outline-none border-none placeholder-zinc-400 placeholder:italic focus:ring-0 ${darkMode ? 'text-white' : 'text-[#111111]'}`} />
+                                </div>
+                              </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>Address details (Optional)</label>
+                            <div className={`w-full rounded-xl overflow-hidden ${darkMode ? 'bg-[#181A1B]' : 'bg-white border shadow-sm'}`}>
+                              <textarea rows={2} value={addressForm.room || ''} onChange={e => setAddressForm({...addressForm, room: e.target.value})} placeholder="Enter apartment, room, floor, etc." className={`w-full text-[12px] font-medium py-2 px-3 bg-transparent outline-none border-none placeholder-zinc-400 placeholder:italic focus:ring-0 resize-none ${darkMode ? 'text-white' : 'text-[#111111]'}`} />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>Address label</label>
+                            <div className="flex gap-2">
+                              {['Home', 'Office', 'Other'].map(label => (
+                                <button
+                                  key={label}
+                                  type="button"
+                                  onClick={() => setAddressForm({...addressForm, label})}
+                                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                    addressForm.label === label 
+                                      ? 'bg-primary text-white shadow-xs' 
+                                      : (darkMode ? 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')
+                                  }`}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
                       </div>
+                    ) : (
+                      <>
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            {addr.label === "Home" ? (
+                              <Home size={12} className="text-primary" />
+                            ) : addr.label === "Office" ? (
+                              <Briefcase size={12} className="text-primary" />
+                            ) : (
+                              <MapPin size={12} className="text-primary" />
+                            )}
+                            <span className={`font-bold text-[10px] uppercase tracking-wider ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
+                              {addr.label || "Address"}
+                            </span>
+                            {addr.isDefault && (
+                              <span className="px-1.5 py-0.2 rounded bg-primary text-white text-[8px] font-bold uppercase tracking-widest">
+                                Default
+                              </span>
+                            )}
+                          </div>
+                          <button onClick={() => handleEditAddress(addr)} className="shrink-0 p-1 rounded-md opacity-50 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 transition-all text-primary" title="Edit Address">
+                            <Edit2 size={12} />
+                          </button>
+                        </div>
+                        
+                        <div className={`space-y-1 leading-relaxed font-semibold`}>
+                          <p className={`text-[11px] font-semibold ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Recipient: <span className={`font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{addr.name || customer.name}</span></p>
+                          <p className={`text-[11px] font-semibold ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Phone: <span className={`font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{addr.phone || customer.phone}</span></p>
+                          <p className={`text-[11.5px] font-bold mt-1 leading-normal ${darkMode ? "text-slate-200" : "text-slate-800"}`}>
+                            {addr.room ? `${addr.room}, ` : ""}
+                            {addr.building ? `${addr.building}, ` : ""}
+                            {addr.street}, {addr.township}, {addr.city}, {addr.region}
+                          </p>
+                        </div>
+
+                        {addr.latitude && addr.longitude && (
+                          <div className="mt-2 pt-2 border-t border-on-surface/5 flex items-center justify-between gap-2">
+                            <span className="text-[9px] font-mono text-slate-500">
+                              {addr.latitude.toFixed(5)}, {addr.longitude.toFixed(5)}
+                            </span>
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${addr.latitude},${addr.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[9px] font-bold text-primary flex items-center gap-1 hover:underline shrink-0"
+                            >
+                              <MapPin size={9} />
+                              Map View
+                            </a>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 ))}
