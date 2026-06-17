@@ -148,34 +148,36 @@ function AddProductModal({
     }
   };
 
-  // Update form data when product prop changes
+  // Update form data when product prop or modal visibility changes
   useEffect(() => {
-    if (product) {
-      setFormData({
-        name: product.name || '',
-        price: product.price?.toString() || '',
-        salePrice: product.salePrice?.toString() || '',
-        category: product.category || categories[0]?.id || 'meat',
-        unit: product.unit || '1 kg',
-        image: product.image || '',
-        stock: product.stock?.toString() || '100',
-        description: product.description || '',
-        sku: product.sku || '',
-        weight: product.weight || '',
-        status: product.status || 'published',
-        mmName: product.mmName || '',
-        thName: product.thName || '',
-        zhName: product.zhName || '',
-        msName: product.msName || ''
-      });
-    } else {
-      setFormData({
-        name: '', price: '', salePrice: '', category: categories[0]?.id || 'meat',
-        unit: '1 kg', image: '', stock: '100', description: '', sku: '',
-        weight: '', status: 'published', mmName: '', thName: '', zhName: '', msName: ''
-      });
+    if (isOpen) {
+      if (product) {
+        setFormData({
+          name: product.name || '',
+          price: product.price?.toString() || '',
+          salePrice: product.salePrice?.toString() || '',
+          category: product.category || categories[0]?.id || 'meat',
+          unit: product.unit || '1 kg',
+          image: product.image || '',
+          stock: product.stock?.toString() || '100',
+          description: product.description || '',
+          sku: product.sku || '',
+          weight: product.weight || '',
+          status: product.status || 'published',
+          mmName: product.mmName || '',
+          thName: product.thName || '',
+          zhName: product.zhName || '',
+          msName: product.msName || ''
+        });
+      } else {
+        setFormData({
+          name: '', price: '', salePrice: '', category: categories[0]?.id || 'meat',
+          unit: '1 kg', image: '', stock: '100', description: '', sku: '',
+          weight: '', status: 'published', mmName: '', thName: '', zhName: '', msName: ''
+        });
+      }
     }
-  }, [product, categories]);
+  }, [product, categories, isOpen]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
