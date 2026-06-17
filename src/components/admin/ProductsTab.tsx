@@ -57,7 +57,7 @@ function AddProductModal({
     price: '',
     salePrice: '',
     category: 'meat',
-    unit: '1 kg',
+    unit: '',
     image: '',
     stock: '100',
     description: '',
@@ -172,7 +172,7 @@ function AddProductModal({
       } else {
         setFormData({
           name: '', price: '', salePrice: '', category: categories[0]?.id || 'meat',
-          unit: '1 kg', image: '', stock: '100', description: '', sku: '',
+          unit: '', image: '', stock: '100', description: '', sku: '',
           weight: '', status: 'published', mmName: '', thName: '', zhName: '', msName: ''
         });
       }
