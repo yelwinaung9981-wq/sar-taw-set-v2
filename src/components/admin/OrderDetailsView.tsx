@@ -76,25 +76,87 @@ export default function OrderDetailsView({
   };
   
   const { updateDeliveryStatus, cancelOrderItem } = useStore();
-  const handleSendToWhatsApp = () => {
-    let itemsStr = order.items.map(i => `- ${i.quantity} x ${i.name}`).join('\n');
-    let msg = `*NEW DELIVERY ORDER*\n\n`;
-    msg += `*Order ID:* #${order.id.slice(-6).toUpperCase()}\n`;
-    msg += `*Customer:* ${order.customerName}\n`;
-    msg += `*Phone:* ${order.customerPhone}\n\n`;
-    
-    msg += `*DELIVERY LOCATION*\n`;
-    if (order.roomNumber) {
-      msg += `${order.roomNumber.replace(/^(Apt\\.?\\s*|Apartment\\s*|Room\\s*)/i, '')}\n`;
+
+  const handleCustomerWhatsApp = (e: React.MouseEvent) => {
+    e.preventDefault();
+    let itemsStr = order.items.map(i => {
+      const itemPrice = i.salePrice || i.price;
+      const line = `${i.quantity} x ${i.name} (${formatPrice(itemPrice)})`;
+      return i.isCancelled ? `• ~${line}~` : `• ${line}`;
+    }).join('\n');
+    const formatDeliveryAddress = () => {
+      let parts = [];
+      if (order.roomNumber) parts.push(order.roomNumber.replace(/^(Apt\.?\s*|Apartment\s*|Room\s*)/i, '').trim());
+      if (order.address) parts.push(order.address.replace(/^(Apt\.?\s*|Apartment\s*|Room\s*)/i, '').trim());
+      
+      parts = parts.filter(Boolean);
+      
+      if (parts.length === 2) {
+        if (parts[1].toLowerCase().includes(parts[0].toLowerCase())) return parts[1];
+        if (parts[0].toLowerCase().includes(parts[1].toLowerCase())) return parts[0];
+      }
+      return parts.join(', ');
+    };
+
+    let msg = `✨ Hello ${order.customerName},\n\n`;
+    msg += `Thank you for choosing us! Your order has been successfully confirmed. Below are your order details:\n\n`;
+    msg += `👤 *CUSTOMER DETAILS*\n`;
+    msg += `• Order ID: #${order.id.slice(-8).padStart(8, '0')}\n`;
+    msg += `• Customer: ${order.customerName}\n`;
+    msg += `• Phone: ${order.customerPhone}\n`;
+    msg += `• Delivery To: ${formatDeliveryAddress()}\n\n`;
+    msg += `🛍 *ITEMS*\n${itemsStr}\n\n`;
+    msg += `🧾 *ORDER SUMMARY*\n`;
+    if (order.deliveryFee) {
+       msg += `• *Delivery Fee:* ${formatPrice(order.deliveryFee)}\n`;
     }
-    if (order.address) {
-      msg += `${order.address.replace(/^(Apt\\.?\\s*|Apartment\\s*|Room\\s*)/i, '')}\n`;
-    }
-    
-    msg += `\n*ORDER ITEMS*\n${itemsStr}\n\n`;
-    msg += `*Total Amount:* ${formatPrice(order.total)}\n`;
+    msg += `• *Total Amount:* ${formatPrice(order.total)}\n`;
     if (order.paymentMethod) {
-       msg += `*Payment Method:* ${order.paymentMethod.replace(/_/g, ' ').toUpperCase()}\n`;
+       msg += `• *Payment Method:* ${order.paymentMethod.replace(/_/g, ' ').toUpperCase()}\n`;
+    }
+    
+    const websiteUrl = window.location.origin;
+    msg += `\n🌐 Track your order instantly here:\n${websiteUrl}\n\n`;
+    msg += `We appreciate your business! 🤍`;
+
+    const url = getWhatsAppLink(order.customerPhone, msg);
+    window.open(url, '_blank');
+  };
+
+  const handleSendToWhatsApp = () => {
+    let itemsStr = order.items.map(i => {
+      const itemPrice = i.salePrice || i.price;
+      const line = `${i.quantity} x ${i.name} (${formatPrice(itemPrice)})`;
+      return i.isCancelled ? `• ~${line}~` : `• ${line}`;
+    }).join('\n');
+    const formatDeliveryAddress = () => {
+      let parts = [];
+      if (order.roomNumber) parts.push(order.roomNumber.replace(/^(Apt\\.?\\s*|Apartment\\s*|Room\\s*)/i, '').trim());
+      if (order.address) parts.push(order.address.replace(/^(Apt\\.?\\s*|Apartment\\s*|Room\\s*)/i, '').trim());
+      
+      parts = parts.filter(Boolean);
+      
+      if (parts.length === 2) {
+        if (parts[1].toLowerCase().includes(parts[0].toLowerCase())) return parts[1];
+        if (parts[0].toLowerCase().includes(parts[1].toLowerCase())) return parts[0];
+      }
+      return parts.join(', ');
+    };
+
+    let msg = `🚚 *NEW DELIVERY ASSIGNMENT*\n\n`;
+    msg += `👤 *CUSTOMER DETAILS*\n`;
+    msg += `• Order ID: #${order.id.slice(-8).padStart(8, '0').toUpperCase()}\n`;
+    msg += `• Customer: ${order.customerName}\n`;
+    msg += `• Phone: ${order.customerPhone}\n`;
+    msg += `• Delivery To: ${formatDeliveryAddress()}\n\n`;
+    msg += `🛍 *ORDER ITEMS*\n${itemsStr}\n\n`;
+    msg += `🧾 *ORDER SUMMARY*\n`;
+    if (order.deliveryFee) {
+       msg += `• *Delivery Fee:* ${formatPrice(order.deliveryFee)}\n`;
+    }
+    msg += `• *Total Amount:* ${formatPrice(order.total)}\n`;
+    if (order.paymentMethod) {
+       msg += `• *Payment Method:* ${order.paymentMethod.replace(/_/g, ' ').toUpperCase()}\n`;
     }
 
     const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
@@ -151,15 +213,13 @@ export default function OrderDetailsView({
                 >
                   <Phone size={14} />
                 </a>
-                <a 
-                  href={getWhatsAppLink(order.customerPhone, `Hi ${order.customerName}, about your order #ID: ${order.id.slice(-8).padStart(8, '0')}...`)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`p-1.5 rounded-full transition-all bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20`}
+                <button 
+                  onClick={handleCustomerWhatsApp}
+                  className={`p-1.5 rounded-full transition-all bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 cursor-pointer`}
                   title="WhatsApp Customer"
                 >
                   <MessageCircle size={14} />
-                </a>
+                </button>
               </div>
             </div>
           </div>
@@ -650,21 +710,8 @@ export default function OrderDetailsView({
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 w-full">
+      <div className="flex flex-col sm:flex-row gap-3 w-full md:w-[50%] lg:w-[40%] ml-auto justify-end mt-4">
          <button
-          onClick={() => handlePrint(order, 'thermal')}
-          className={`flex-1 py-4 px-4 rounded-xl border flex items-center justify-center gap-2 transition-all active:scale-95 ${
-            darkMode
-              ? "bg-primary text-surface shadow-lg shadow-primary/20 hover:bg-primary/90 border-transparent"
-              : "bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 border-transparent"
-          }`}
-        >
-          <Printer size={16} />
-          <span className="text-xs font-black uppercase tracking-widest">
-            Print Thermal Receipt
-          </span>
-        </button>
-        <button
           onClick={() => handlePrint(order, 'a4')}
           className={`flex-1 py-4 px-4 rounded-xl border flex items-center justify-center gap-2 transition-all active:scale-95 ${
             darkMode
@@ -675,6 +722,19 @@ export default function OrderDetailsView({
           <Printer size={16} />
           <span className="text-xs font-black uppercase tracking-widest">
             Print A4 Invoice
+          </span>
+        </button>
+        <button
+          onClick={() => handlePrint(order, 'thermal')}
+          className={`flex-1 py-4 px-4 rounded-xl border flex items-center justify-center gap-2 transition-all active:scale-95 ${
+            darkMode
+              ? "bg-primary text-surface shadow-lg shadow-primary/20 hover:bg-primary/90 border-transparent"
+              : "bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 border-transparent"
+          }`}
+        >
+          <Printer size={16} />
+          <span className="text-xs font-black uppercase tracking-widest">
+            Print Thermal Receipt
           </span>
         </button>
       </div>
