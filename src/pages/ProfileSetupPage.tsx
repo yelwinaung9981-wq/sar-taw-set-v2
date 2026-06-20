@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 import { Camera, ChevronLeft, User, Loader2, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 
 export default function ProfileSetupPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { darkMode, userAvatar, setUserAvatar, updateUserProfile, t, userName, userPhone } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -46,11 +47,13 @@ export default function ProfileSetupPage() {
     if (tempAvatar) {
       updateUserProfile({ avatar: tempAvatar });
     }
-    navigate('/menu', { replace: true });
+    const intended = location.state?.from?.pathname || '/menu';
+    navigate(intended, { replace: true });
   };
 
   const handleSkip = () => {
-    navigate('/menu', { replace: true });
+    const intended = location.state?.from?.pathname || '/menu';
+    navigate(intended, { replace: true });
   };
 
   return (

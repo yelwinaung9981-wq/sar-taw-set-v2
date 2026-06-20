@@ -849,6 +849,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // BACKWARD LOOKUP: Try to restore phone-based session if we have Auth but no phone
     if (authUid && !uid && !isAuthLoading && lookupPhoneMappingRef.current !== authUid) {
       const lookupMapping = async () => {
+        let restored = false;
         try {
           console.log("StoreContext: Attempting auth mapping restoration for:", authUid);
           const mappingSnap = await getDoc(doc(db, 'authToPhone', authUid));
@@ -858,13 +859,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               console.log("StoreContext: Restored phone from mapping:", mappedPhone);
               setUserPhone(mappedPhone);
               localStorage.setItem('sp_user_phone', mappedPhone);
+              restored = true;
               return;
             }
           }
         } catch (err) {
           console.warn("StoreContext: Auth mapping restoration failed:", err);
         } finally {
-          setIsProfileLoaded(true);
+          if (!restored) {
+            setIsProfileLoaded(true);
+          }
         }
       };
       lookupPhoneMappingRef.current = authUid;

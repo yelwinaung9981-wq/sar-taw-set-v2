@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore, normalizePhone } from '../context/StoreContext';
 import { User, Phone, ArrowRight, Globe } from 'lucide-react';
@@ -9,6 +9,7 @@ import { db } from '../lib/firebase';
 
 export default function RegistrationPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setUserName, setUserPhone, darkMode, deviceId, isAuthLoading, authUid, userName, userPhone, t } = useStore();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -68,11 +69,14 @@ export default function RegistrationPage() {
     const userRef = doc(db, 'users', userPhone);
     let userDocExist = false;
     let existingCreatedAt = null;
+    let existingAvatar = null;
     try {
       const userDoc = await getDoc(userRef);
       if (userDoc.exists()) {
         userDocExist = true;
-        existingCreatedAt = userDoc.data()?.createdAt;
+        const data = userDoc.data();
+        existingCreatedAt = data?.createdAt;
+        existingAvatar = data?.avatar;
       }
     } catch (e) {
       console.warn("Failed to check existing user:", e);
@@ -98,7 +102,15 @@ export default function RegistrationPage() {
     document.cookie = `sp_user_phone=${encodeURIComponent(userPhone)};expires=${date.toUTCString()};path=/`;
     
     setIsSubmitting(false);
-    navigate('/profile-setup', { replace: true });
+    
+    const intendedDest = location.state?.from?.pathname || sessionStorage.getItem('sp_intended_dest') || '/menu';
+    sessionStorage.removeItem('sp_intended_dest');
+    
+    if (existingAvatar || localStorage.getItem('sp_user_avatar')) {
+      navigate(intendedDest, { replace: true });
+    } else {
+      navigate('/profile-setup', { replace: true, state: { from: { pathname: intendedDest } } });
+    }
   };
 
   const inputClass = `w-full h-12 pl-12 pr-4 rounded-lg border transition-all duration-500 ease-out outline-none text-sm group-hover:shadow-md ${
