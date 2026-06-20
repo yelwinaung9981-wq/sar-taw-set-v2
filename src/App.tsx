@@ -75,15 +75,27 @@ function ScrollToTop() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { userName, userPhone } = useStore();
+  const { userName, userPhone, isAuthLoading, isProfileLoaded, isAdmin } = useStore();
   const location = useLocation();
+  
+  if (isAuthLoading || !isProfileLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background dark:bg-surface">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (isAdmin) {
+    return <>{children}</>;
+  }
   
   // If user hasn't registered (no name or phone), redirect to registration
   if (!userName || !userPhone) {
     return <Navigate to="/registration" state={{ from: location }} replace />;
   }
   
-  return children;
+  return <>{children}</>;
 }
 
 function ThemeHandler() {

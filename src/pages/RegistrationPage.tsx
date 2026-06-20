@@ -92,6 +92,10 @@ export default function RegistrationPage() {
 
     localStorage.setItem('sp_user_name', userName);
     localStorage.setItem('sp_user_phone', userPhone);
+    const date = new Date();
+    date.setTime(date.getTime() + (365 * 24 * 60 * 60 * 1000));
+    document.cookie = `sp_user_name=${encodeURIComponent(userName)};expires=${date.toUTCString()};path=/`;
+    document.cookie = `sp_user_phone=${encodeURIComponent(userPhone)};expires=${date.toUTCString()};path=/`;
     
     setIsSubmitting(false);
     navigate('/profile-setup', { replace: true });

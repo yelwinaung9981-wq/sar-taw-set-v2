@@ -543,12 +543,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const getCookie = (name: string) => {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return decodeURIComponent(parts.pop()?.split(';').shift() || '');
+    return null;
+  };
+
+  const setCookie = (name: string, value: string, days: number = 365) => {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = `${name}=${encodeURIComponent(value)};expires=${date.toUTCString()};path=/`;
+  };
+
   const [userName, setUserName] = useState(() => {
-    const val = localStorage.getItem('sp_user_name');
+    let val = localStorage.getItem('sp_user_name');
+    if (!val || val === 'null' || val === 'undefined') {
+        val = getCookie('sp_user_name');
+    }
     return (val && val !== 'null' && val !== 'undefined') ? val : '';
   });
   const [userPhone, setUserPhone] = useState(() => {
-    const val = localStorage.getItem('sp_user_phone');
+    let val = localStorage.getItem('sp_user_phone');
+    if (!val || val === 'null' || val === 'undefined') {
+        val = getCookie('sp_user_phone');
+    }
     return (val && val !== 'null' && val !== 'undefined') ? val : '';
   });
 
@@ -4091,11 +4110,21 @@ ${itemsList}
   useEffect(() => {
     const handler = setTimeout(() => {
       const persistToLocalStorage = () => {
-        if (userName) localStorage.setItem('sp_user_name', userName);
-        else localStorage.removeItem('sp_user_name');
+        if (userName) {
+          localStorage.setItem('sp_user_name', userName);
+          setCookie('sp_user_name', userName);
+        } else {
+          localStorage.removeItem('sp_user_name');
+          document.cookie = 'sp_user_name=; Max-Age=0; path=/';
+        }
 
-        if (userPhone) localStorage.setItem('sp_user_phone', userPhone);
-        else localStorage.removeItem('sp_user_phone');
+        if (userPhone) {
+          localStorage.setItem('sp_user_phone', userPhone);
+          setCookie('sp_user_phone', userPhone);
+        } else {
+          localStorage.removeItem('sp_user_phone');
+          document.cookie = 'sp_user_phone=; Max-Age=0; path=/';
+        }
 
         if (userAvatar) localStorage.setItem('sp_user_avatar', userAvatar);
         if (userEmail) localStorage.setItem('sp_user_email', userEmail);

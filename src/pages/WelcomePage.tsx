@@ -6,15 +6,13 @@ import { useStore } from '../context/StoreContext';
 
 export default function WelcomePage() {
   const navigate = useNavigate();
-  const { darkMode, userPhone, userName, t, isDeliveryEnabled } = useStore();
+  const { darkMode, userPhone, userName, t, isDeliveryEnabled, isAuthLoading, isProfileLoaded } = useStore();
 
   const handleGetStarted = () => {
-    // Check if user is registered (has name and phone)
     const isRegistered = userName && userPhone;
     if (isRegistered) {
       navigate('/menu', { replace: true });
     } else {
-      // Explicitly state that we are coming from the welcome flow to land on menu
       navigate('/registration', { state: { from: { pathname: '/menu' } } });
     }
   };
@@ -69,9 +67,10 @@ export default function WelcomePage() {
           )}
           <button
             onClick={handleGetStarted}
-            className="w-full bg-primary text-on-primary-fixed px-8 py-3 rounded-md font-sans font-semibold hover:bg-primary-container transition-all duration-300 shadow-md"
+            disabled={isAuthLoading || !isProfileLoaded}
+            className="w-full bg-primary text-on-primary-fixed px-8 py-3 rounded-md font-sans font-semibold hover:bg-primary-container transition-all duration-300 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {t('getStarted')}
+            {isAuthLoading || !isProfileLoaded ? 'Loading...' : t('getStarted')}
           </button>
           
           {/* Version Footer */}
