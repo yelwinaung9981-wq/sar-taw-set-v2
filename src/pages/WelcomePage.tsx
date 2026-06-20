@@ -9,11 +9,19 @@ export default function WelcomePage() {
   const { darkMode, userPhone, userName, t, isDeliveryEnabled, isAuthLoading, isProfileLoaded } = useStore();
 
   const handleGetStarted = () => {
+    sessionStorage.setItem('sp_has_started', 'true');
     const isRegistered = userName && userPhone;
+    const intended = sessionStorage.getItem('sp_intended_dest');
+    
     if (isRegistered) {
-      navigate('/menu', { replace: true });
+      if (intended) {
+        sessionStorage.removeItem('sp_intended_dest');
+        navigate(intended, { replace: true });
+      } else {
+        navigate('/menu', { replace: true });
+      }
     } else {
-      navigate('/registration', { state: { from: { pathname: '/menu' } } });
+      navigate('/registration', { state: { from: { pathname: intended || '/menu' } } });
     }
   };
 

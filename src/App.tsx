@@ -98,6 +98,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function SessionGuard({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const hasStarted = sessionStorage.getItem('sp_has_started') === 'true';
+    const isExcluded = ['/', '/admin-login', '/rider-login'].includes(location.pathname);
+    
+    if (!hasStarted && !isExcluded) {
+      sessionStorage.setItem('sp_intended_dest', location.pathname + location.search + location.hash);
+      navigate('/', { replace: true });
+    }
+  }, [location.pathname, location.search, location.hash, navigate]);
+
+  return <>{children}</>;
+}
+
 function ThemeHandler() {
   const { darkMode } = useStore();
   
@@ -264,9 +281,10 @@ function AppContent() {
         </div>
       )}
       <HashRouter>
-        <ScrollToTop />
-        <QueryParamHandler />
-        <BlockedGuard>
+        <SessionGuard>
+          <ScrollToTop />
+          <QueryParamHandler />
+          <BlockedGuard>
           <Suspense fallback={null}>
             <Routes>
               <Route path="/" element={<WelcomePage />} />
@@ -299,7 +317,8 @@ function AppContent() {
               <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             </Routes>
           </Suspense>
-        </BlockedGuard>
+          </BlockedGuard>
+        </SessionGuard>
       </HashRouter>
     </div>
   );
