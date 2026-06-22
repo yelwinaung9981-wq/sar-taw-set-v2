@@ -104,7 +104,7 @@ function SessionGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const hasStarted = sessionStorage.getItem('sp_has_started') === 'true';
-    const isExcluded = ['/', '/admin-login', '/rider-login'].includes(location.pathname);
+    const isExcluded = ['/', '/admin-login', '/rider-login'].includes(location.pathname) || location.pathname.startsWith('/admin') || location.pathname.startsWith('/setup-admin');
     
     if (!hasStarted && !isExcluded) {
       sessionStorage.setItem('sp_intended_dest', location.pathname + location.search + location.hash);
