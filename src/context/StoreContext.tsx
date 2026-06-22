@@ -2669,8 +2669,10 @@ ${itemsList}
     note?: string;
     paymentScreenshot?: string;
   }) => {
-    const orderPhoneId = normalizePhone(details.phone);
-    if (!orderPhoneId) return null;
+    const deliveryPhoneId = normalizePhone(details.phone);
+    // Use the logged-in user's UID for the order array, fallback to delivery phone for guests
+    const accountUid = uid || deliveryPhoneId;
+    if (!accountUid) return null;
     
     // Generate a strictly 8-digit numeric order ID
     const orderId = Math.floor(10000000 + Math.random() * 90000000).toString();
@@ -2681,7 +2683,7 @@ ${itemsList}
 
     const orderData = {
       id: orderId,
-      uid: orderPhoneId,
+      uid: accountUid,
       authUid: authUid,
       roomNumber: details.room,
       address: details.address || null,
@@ -2731,9 +2733,9 @@ ${itemsList}
       const batch = writeBatch(db);
       
       // 2. Update/Create User Profile
-      const userDocRef = doc(db, 'users', orderPhoneId);
+      const userDocRef = doc(db, 'users', accountUid);
       const userUpdate: any = {
-        uid: orderPhoneId,
+        uid: accountUid,
         name: details.name,
         phone: details.phone,
         room: details.room,
@@ -2769,15 +2771,15 @@ ${itemsList}
         }, { merge: true });
       });
 
-      // 5. BACKGROUND SYNC: We don't 'await' the commit to make the UI instant
-      // Firestore will handle this write in the background/offline queue
-      console.log("StoreContext: Committing order in background for instant UI response");
-      batch.commit().catch(error => {
-        console.error("Background Order Commit Failed:", error);
-        handleFirestoreError(error, OperationType.WRITE, 'batch-order-bg');
-        // We might want to notify the user if it's a critical error
-        toast.error('Warning: Cloud sync delay. Please ensure you have a stable connection.');
-      });
+      // 5. SYNC: Await the commit to ensure the order is actually placed on the server
+      console.log("StoreContext: Committing order to server");
+      try {
+        await batch.commit();
+      } catch (error) {
+        console.error("Order Commit Failed:", error);
+        handleFirestoreError(error, OperationType.WRITE, 'batch-order');
+        throw new Error('Cloud sync failed. Please check your connection and try again.');
+      }
 
       // 6. IMMEDIATE UI UPDATES
       setCart([]);
