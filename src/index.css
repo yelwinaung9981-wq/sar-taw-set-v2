@@ -42,6 +42,16 @@
   body {
     @apply bg-surface text-on-surface font-sans;
   }
+  
+  /* Hide scrollbar globally but allow scrolling */
+  html, body, #root, [data-reactroot] {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  html::-webkit-scrollbar, body::-webkit-scrollbar, #root::-webkit-scrollbar, [data-reactroot]::-webkit-scrollbar {
+    display: none;
+  }
+
   input, select, textarea {
     font-size: 16px !important;
   }
