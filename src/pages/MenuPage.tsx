@@ -34,6 +34,18 @@ export default function MenuPage() {
   }, [promotionBanners]);
 
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [itemRanks, setItemRanks] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (selectedCategory === 'all') {
+      const ranks: Record<string, number> = {};
+      products.forEach(p => {
+        ranks[p.id] = Math.random();
+      });
+      setItemRanks(ranks);
+    }
+  }, [selectedCategory, products.length]);
+
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [showHeaderSearch, setShowHeaderSearch] = useState(false);
   const [qrItem, setQrItem] = useState<{ id: string; name: string } | null>(null);
@@ -205,7 +217,7 @@ export default function MenuPage() {
       return activeBundles.map(b => ({ ...b, isBundle: true }));
     }
     
-    return products.filter(product => {
+    let items = products.filter(product => {
       // 1. Must match selected category (or be 'all')
       const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
       if (!matchesCategory) return false;
@@ -218,7 +230,13 @@ export default function MenuPage() {
 
       return true;
     });
-  }, [selectedCategory, products, activeDeals, activeBundles, categoriesWithSpecials, categories]);
+
+    if (selectedCategory === 'all') {
+      items = [...items].sort((a, b) => (itemRanks[a.id] || 0) - (itemRanks[b.id] || 0));
+    }
+
+    return items;
+  }, [selectedCategory, products, activeDeals, activeBundles, categoriesWithSpecials, categories, itemRanks]);
 
   return (
     <div className={`min-h-screen pb-32 transition-colors duration-300 ${darkMode ? 'bg-surface' : 'bg-surface'}`}>
