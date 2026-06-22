@@ -38,13 +38,19 @@ export default function MenuPage() {
 
   useEffect(() => {
     if (selectedCategory === 'all') {
-      const ranks: Record<string, number> = {};
-      products.forEach(p => {
-        ranks[p.id] = Math.random();
+      setItemRanks(prev => {
+        let changed = false;
+        const newRanks = { ...prev };
+        products.forEach(p => {
+          if (newRanks[p.id] === undefined) {
+            newRanks[p.id] = Math.random();
+            changed = true;
+          }
+        });
+        return changed ? newRanks : prev;
       });
-      setItemRanks(ranks);
     }
-  }, [selectedCategory, products.length]);
+  }, [selectedCategory, products]);
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [showHeaderSearch, setShowHeaderSearch] = useState(false);
