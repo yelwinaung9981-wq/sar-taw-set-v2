@@ -65,6 +65,22 @@ export default function SearchPage() {
   // Filter & Sort State
   const [showFilters, setShowFilters] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [cols, setCols] = useState(2);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      if (width >= 1280) setCols(6);
+      else if (width >= 1024) setCols(5);
+      else if (width >= 768) setCols(4);
+      else if (width >= 640) setCols(3);
+      else setCols(2);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [sortBy, setSortBy] = useState('relevance');
   
@@ -474,11 +490,29 @@ export default function SearchPage() {
             </section>
           </motion.div>
         ) : filteredProducts.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 grid-flow-row-dense">
-            {filteredProducts.map(product => {
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {filteredProducts.map((product, index) => {
               const cartItem = cart.find(c => c.id === product.id);
               const quantityInCart = cartItem ? cartItem.quantity : 0;
               const stats = getProductStats(product.id);
+
+              const isSelected = selectedProduct?.id === product.id;
+              let computedOrder = index;
+              if (selectedProduct) {
+                const S = filteredProducts.findIndex((x: any) => x.id === selectedProduct.id);
+                if (S !== -1) {
+                  const R_S = Math.floor(S / cols);
+                  const R_i = Math.floor(index / cols);
+                  if (R_i === R_S) {
+                    computedOrder = isSelected ? R_S * 100 : R_S * 100 + 1;
+                  } else if (R_i < R_S) {
+                    computedOrder = R_i * 100;
+                  } else {
+                    computedOrder = R_i * 100 + 2;
+                  }
+                }
+              }
+
               return (
                 <motion.div 
                   onClick={() => {
@@ -502,6 +536,7 @@ export default function SearchPage() {
                     damping: 22,
                     mass: 0.8
                   }}
+                  style={{ order: computedOrder }}
                   className={`${darkMode ? 'bg-surface-container-high' : 'bg-white'} rounded-[1.5rem] overflow-hidden relative group shadow-[0_2px_10px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.05)] ${selectedProduct?.id === product.id ? 'col-span-2' : 'flex flex-col h-full'}`}
                 >
                   {selectedProduct?.id === product.id ? (

@@ -11,6 +11,21 @@ export default function FavoritesPage() {
   const { favorites, toggleFavorite, addToCart, updateQuantity, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName, getCategoryName, isProfileLoaded, products, orders, language } = useStore();
   const navigate = useNavigate();
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [cols, setCols] = useState(2);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      if (width >= 1280) setCols(6);
+      else if (width >= 1024) setCols(5);
+      else if (width >= 768) setCols(4);
+      else if (width >= 640) setCols(3);
+      else setCols(2);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const [sessionViews, setSessionViews] = useState<Record<string, number>>({});
 
@@ -62,11 +77,29 @@ export default function FavoritesPage() {
             <p className="text-on-surface-variant font-black text-xs uppercase tracking-widest animate-pulse">Restoring Favorites...</p>
           </div>
         ) : favoriteProducts.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 grid-flow-row-dense">
-            {favoriteProducts.map(product => {
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {favoriteProducts.map((product, index) => {
               const cartItem = cart.find(c => c.id === product.id);
               const quantityInCart = cartItem ? cartItem.quantity : 0;
               const stats = getProductStats(product.id);
+
+              const isSelected = selectedProduct?.id === product.id;
+              let computedOrder = index;
+              if (selectedProduct) {
+                const S = favoriteProducts.findIndex((x: any) => x.id === selectedProduct.id);
+                if (S !== -1) {
+                  const R_S = Math.floor(S / cols);
+                  const R_i = Math.floor(index / cols);
+                  if (R_i === R_S) {
+                    computedOrder = isSelected ? R_S * 100 : R_S * 100 + 1;
+                  } else if (R_i < R_S) {
+                    computedOrder = R_i * 100;
+                  } else {
+                    computedOrder = R_i * 100 + 2;
+                  }
+                }
+              }
+
               return (
                 <motion.div 
                   onClick={() => {
@@ -89,6 +122,7 @@ export default function FavoritesPage() {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   key={product.id} 
+                  style={{ order: computedOrder }}
                   className={`rounded-xl overflow-hidden relative shadow-sm ${darkMode ? 'bg-surface-container-high' : 'bg-surface-container-lowest'} ${selectedProduct?.id === product.id ? 'col-span-2' : 'flex flex-col h-full'}`}
                 >
                   {selectedProduct?.id === product.id ? (
