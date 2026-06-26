@@ -13,7 +13,7 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ onClick, darkM
   const [isAdded, setIsAdded] = useState(false);
 
   const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+    e?.stopPropagation?.();
     if (disabled) return;
     onClick();
     setIsAdded(true);

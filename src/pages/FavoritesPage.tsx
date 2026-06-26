@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
-import { ChevronLeft, Heart, Plus, ShoppingCart, Search, Trash2 } from 'lucide-react';
+import { ChevronLeft, Heart, Plus, Minus, ShoppingCart, Search, Trash2, Eye, X } from 'lucide-react';
 import { AddToCartButton } from '../components/AddToCartButton';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { ProductDetailModal } from '../components/ui/ProductDetailModal';
 
 export default function FavoritesPage() {
-  const { favorites, toggleFavorite, addToCart, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName, getCategoryName, isProfileLoaded, products } = useStore();
+  const { favorites, toggleFavorite, addToCart, updateQuantity, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName, getCategoryName, isProfileLoaded, products } = useStore();
   const navigate = useNavigate();
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
 
@@ -48,17 +47,150 @@ export default function FavoritesPage() {
             <p className="text-on-surface-variant font-black text-xs uppercase tracking-widest animate-pulse">Restoring Favorites...</p>
           </div>
         ) : favoriteProducts.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {favoriteProducts.map(product => (
-              <motion.div 
-                onClick={() => setSelectedProduct(product)}
-                layout
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                key={product.id} 
-                className={`rounded-xl overflow-hidden relative shadow-sm flex flex-col h-full ${darkMode ? 'bg-surface-container-high' : 'bg-surface-container-lowest'}`}
-              >
-                <button 
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 grid-flow-row-dense">
+            {favoriteProducts.map(product => {
+              const cartItem = cart.find(c => c.id === product.id);
+              const quantityInCart = cartItem ? cartItem.quantity : 0;
+              return (
+                <motion.div 
+                  onClick={() => setSelectedProduct(selectedProduct?.id === product.id ? null : product)}
+                  layout
+                  transition={{
+                    type: "spring",
+                    stiffness: 140,
+                    damping: 22,
+                    mass: 0.8
+                  }}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  key={product.id} 
+                  className={`rounded-xl overflow-hidden relative shadow-sm ${darkMode ? 'bg-surface-container-high' : 'bg-surface-container-lowest'} ${selectedProduct?.id === product.id ? 'col-span-2' : 'flex flex-col h-full'}`}
+                >
+                  {selectedProduct?.id === product.id ? (
+                    <div className="flex flex-row h-full min-h-[160px]">
+                      {/* Left: Image */}
+                      <div className="relative w-2/5 min-w-[120px] overflow-hidden bg-[#FDFBF7]">
+                        <img 
+                          className={`w-full h-full object-cover ${product.isAvailable === false ? 'opacity-50' : ''}`} 
+                          src={product.image} 
+                          alt={product.name || product.title}
+                          referrerPolicy="no-referrer"
+                        />
+                        {product.isAvailable === false && (
+                          <div className="absolute inset-0 flex items-center justify-center z-20">
+                            <div className="bg-black/70 px-2 py-1 rounded-lg">
+                              <span className="text-white font-black text-[8px] uppercase tracking-widest">{t('soldOut') || 'Sold Out'}</span>
+                            </div>
+                          </div>
+                        )}
+                        {!product.isBundle && (
+                          <button 
+                            onClick={(e) => {
+                              e?.stopPropagation?.();
+                              toggleFavorite(product.id);
+                            }}
+                            className={`absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center bg-white/50 backdrop-blur-md rounded-full transition-all duration-300 active:scale-90 ${
+                              favorites.includes(product.id) 
+                                ? 'text-rose-500 shadow-sm' 
+                                : 'text-slate-600 hover:text-rose-500'
+                            }`}
+                          >
+                            <Heart size={12} fill={favorites.includes(product.id) ? "currentColor" : "none"} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Right: Details */}
+                      <div className="flex-1 p-3 flex flex-col h-full overflow-hidden">
+                        <div className="space-y-1 relative flex-1 overflow-y-auto no-scrollbar pr-1">
+                          <button 
+                            onClick={(e) => {
+                              e?.stopPropagation?.();
+                              setSelectedProduct(null);
+                            }}
+                            className={`absolute -top-1 -right-1 w-6 h-6 flex items-center justify-center rounded-full transition-colors ${darkMode ? 'hover:bg-white/10 text-white/50 hover:text-white' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-700'}`}
+                          >
+                            <X size={14} />
+                          </button>
+                          <div className="pr-6">
+                            <h4 className="text-on-surface font-black text-sm leading-tight tracking-tight">
+                              {getMainName(product)}
+                            </h4>
+                            <p className="text-on-surface-variant/70 text-[10px] font-medium mt-0.5">
+                              {getSecondaryName(product)}
+                            </p>
+                          </div>
+                          {product.description && (
+                            <p className={`text-[10px] leading-relaxed mt-1.5 ${darkMode ? 'text-on-surface-variant/80' : 'text-slate-500'}`}>
+                              {product.description}
+                            </p>
+                          )}
+                          <p className="text-on-surface-variant/40 text-[8px] font-bold uppercase tracking-[0.1em] mt-2 pb-2">
+                            {product.unit || (product.isBundle ? t('bundle') || 'Bundle' : '')}
+                          </p>
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-between border-t border-on-surface/5 pt-2 flex-shrink-0">
+                          <div className="flex flex-col">
+                            {product.originalPrice && (
+                              <span className="text-[9px] text-on-surface-variant/40 line-through font-bold">
+                                {formatPrice(product.originalPrice * (quantityInCart || 1))}
+                              </span>
+                            )}
+                            <p className="text-primary font-black text-base tracking-tighter">
+                              {formatPrice(product.price * (quantityInCart || 1))}
+                            </p>
+                          </div>
+                          
+                          {quantityInCart > 0 ? (
+                            <div className="flex items-center gap-2 bg-surface-container-low p-1 rounded-xl shadow-sm border border-on-surface/5">
+                              <motion.button
+                                whileTap={{ scale: 0.9 }}
+                                onClick={(e) => {
+                                  e?.stopPropagation?.();
+                                  updateQuantity(product.id, -1);
+                                }}
+                                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                  darkMode 
+                                    ? 'bg-surface-container hover:bg-white/5 text-primary' 
+                                    : 'bg-white hover:bg-slate-50 text-primary shadow-[0_1px_3px_rgba(0,0,0,0.05)]'
+                                }`}
+                              >
+                                <Minus size={12} strokeWidth={3} />
+                              </motion.button>
+
+                              <span className="text-on-surface font-black text-xs px-1.5 min-w-[16px] text-center">
+                                {quantityInCart}
+                              </span>
+
+                              <motion.button
+                                whileTap={{ scale: 0.9 }}
+                                onClick={(e) => {
+                                  e?.stopPropagation?.();
+                                  updateQuantity(product.id, 1);
+                                }}
+                                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                  darkMode 
+                                    ? 'bg-surface-container hover:bg-white/5 text-primary' 
+                                    : 'bg-white hover:bg-slate-50 text-primary shadow-[0_1px_3px_rgba(0,0,0,0.05)]'
+                                }`}
+                              >
+                                <Plus size={12} strokeWidth={3} />
+                              </motion.button>
+                            </div>
+                          ) : (
+                            <AddToCartButton 
+                              onClick={() => addToCart(product)}
+                              darkMode={darkMode}
+                              disabled={product.isAvailable === false}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                  <div className="flex flex-col h-full">
+                  <button 
                   onClick={() => toggleFavorite(product.id)}
                   className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center transition-all duration-300 active:scale-90 text-rose-500 drop-shadow-sm"
                 >
@@ -101,8 +233,10 @@ export default function FavoritesPage() {
                     />
                   </div>
                 </div>
+              </div>
+              )}
               </motion.div>
-            ))}
+            ); })}
           </div>
         ) : (
           <div className="py-24 text-center space-y-6">
@@ -163,11 +297,7 @@ export default function FavoritesPage() {
         )}
       </AnimatePresence>
 
-      <ProductDetailModal 
-        isOpen={!!selectedProduct} 
-        onClose={() => setSelectedProduct(null)} 
-        product={selectedProduct} 
-      />
+
     </div>
   );
 }

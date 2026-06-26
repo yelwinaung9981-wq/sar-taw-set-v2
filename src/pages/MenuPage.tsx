@@ -2,11 +2,11 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 import { 
-  ShoppingCart, Search, Menu as MenuIcon, Plus, Store, Receipt, User, Settings, X, 
+  ShoppingCart, Search, Menu as MenuIcon, Plus, Minus, Store, Receipt, User, Settings, X, 
   Sliders, Camera, Heart, Bell, Trash2, CheckCircle2, Sparkles, Zap, LayoutDashboard, 
   Snowflake, Coffee, Cookie, Utensils, Baby, Dog, Home, Briefcase, Pill, Smile,
   Fish, Beef, Carrot, Egg, Soup, Wheat, UtensilsCrossed, Flame, Wine, Candy, MessageCircle,
-  QrCode, Share2
+  QrCode, Share2, Eye
 } from 'lucide-react';
 
 import { AddToCartButton } from '../components/AddToCartButton';
@@ -16,12 +16,11 @@ import { db } from '../lib/firebase';
 import { PRODUCTS } from '../lib/seed';
 import { CATEGORIES } from '../constants';
 import { QRCodeModal } from '../components/ui/QRCodeModal';
-import { ProductDetailModal } from '../components/ui/ProductDetailModal';
 
 export default function MenuPage() {
   const [searchParams] = useSearchParams();
   const { 
-    setRoomNumber, addToCart, cartTotal, cart, roomNumber, clearCart,
+    setRoomNumber, addToCart, updateQuantity, cartTotal, cart, roomNumber, clearCart,
     favorites, toggleFavorite, notifications, markNotificationAsRead, clearNotifications,
     t, darkMode, language, formatPrice, getMainName, getSecondaryName, getCategoryName, products,
     promotionBanners, categories, deals, bundles, settings
@@ -448,22 +447,156 @@ export default function MenuPage() {
         {/* Product Grid */}
         <section ref={productGridRef} className="mt-1 px-4 min-h-[70vh] scroll-mt-[112px]">
           {filteredItems.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-              {filteredItems.map((item: any) => (
-                <motion.div 
-                  onClick={() => setSelectedProduct(item)}
-                  initial={{ opacity: 0, y: 10 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  key={item.id} 
-                  className={`${darkMode ? 'bg-surface-container-high' : 'bg-surface-container-lowest'} rounded-xl overflow-hidden relative group shadow-[0_2px_10px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.05)] transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col h-full`}
-                >
-                  {/* Image Section */}
-                  <div className={`relative h-32 w-full overflow-hidden ${darkMode ? 'bg-surface-container-low' : 'bg-[#FDFBF7]'}`}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 grid-flow-row-dense">
+              {filteredItems.map((item: any) => {
+                const cartItem = cart.find((c: any) => c.id === item.id);
+                const quantityInCart = cartItem ? cartItem.quantity : 0;
+                return (
+                  <motion.div 
+                    onClick={() => setSelectedProduct(selectedProduct?.id === item.id ? null : item)}
+                    initial={{ opacity: 0, y: 10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    key={item.id} 
+                    layout
+                    transition={{
+                      type: "spring",
+                      stiffness: 140,
+                      damping: 22,
+                      mass: 0.8
+                    }}
+                    className={`${darkMode ? 'bg-surface-container-high' : 'bg-surface-container-lowest'} rounded-xl overflow-hidden relative group shadow-[0_2px_10px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.05)] ${selectedProduct?.id === item.id ? 'col-span-2' : 'flex flex-col h-full'}`}
+                  >
+                    {selectedProduct?.id === item.id ? (
+                      <div className="flex flex-row h-full min-h-[160px]">
+                        {/* Left: Image */}
+                        <div className={`relative w-2/5 min-w-[120px] overflow-hidden ${darkMode ? 'bg-surface-container-low' : 'bg-[#FDFBF7]'}`}>
+                          <img 
+                            className={`w-full h-full object-cover ${item.isAvailable === false ? 'opacity-50' : ''}`} 
+                            src={item.image} 
+                            alt={item.name || item.title}
+                            referrerPolicy="no-referrer"
+                          />
+                          {item.isAvailable === false && (
+                            <div className="absolute inset-0 flex items-center justify-center z-20">
+                              <div className="bg-black/70 px-2 py-1 rounded-lg">
+                                <span className="text-white font-black text-[8px] uppercase tracking-widest">{t('soldOut') || 'Sold Out'}</span>
+                              </div>
+                            </div>
+                          )}
+                          {!item.isBundle && (
+                            <button 
+                              onClick={(e) => {
+                                e?.stopPropagation?.();
+                                toggleFavorite(item.id);
+                              }}
+                              className={`absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center bg-white/50 backdrop-blur-md rounded-full transition-all duration-300 active:scale-90 ${
+                                favorites.includes(item.id) 
+                                  ? 'text-rose-500 shadow-sm' 
+                                  : 'text-slate-600 hover:text-rose-500'
+                              }`}
+                            >
+                              <Heart size={12} fill={favorites.includes(item.id) ? "currentColor" : "none"} />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Right: Details */}
+                        <div className="flex-1 p-3 flex flex-col h-full overflow-hidden">
+                          <div className="space-y-1 relative flex-1 overflow-y-auto no-scrollbar pr-1">
+                            <button 
+                              onClick={(e) => {
+                                e?.stopPropagation?.();
+                                setSelectedProduct(null);
+                              }}
+                              className={`absolute -top-1 -right-1 w-6 h-6 flex items-center justify-center rounded-full transition-colors ${darkMode ? 'hover:bg-white/10 text-white/50 hover:text-white' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-700'}`}
+                            >
+                              <X size={14} />
+                            </button>
+                            <div className="pr-6">
+                              <h4 className="text-on-surface font-black text-sm leading-tight tracking-tight">
+                                {getMainName(item)}
+                              </h4>
+                              <p className="text-on-surface-variant/70 text-[10px] font-medium mt-0.5">
+                                {getSecondaryName(item)}
+                              </p>
+                            </div>
+                            {item.description && (
+                              <p className={`text-[10px] leading-relaxed mt-1.5 ${darkMode ? 'text-on-surface-variant/80' : 'text-slate-500'}`}>
+                                {item.description}
+                              </p>
+                            )}
+                            <p className="text-on-surface-variant/40 text-[8px] font-bold uppercase tracking-[0.1em] mt-2 pb-2">
+                              {item.unit || (item.isBundle ? t('bundle') || 'Bundle' : '')}
+                            </p>
+                          </div>
+
+                          <div className="mt-2 flex items-center justify-between border-t border-on-surface/5 pt-2 flex-shrink-0">
+                            <div className="flex flex-col">
+                              {item.originalPrice && (
+                                <span className="text-[9px] text-on-surface-variant/40 line-through font-bold">
+                                  {formatPrice(item.originalPrice * (quantityInCart || 1))}
+                                </span>
+                              )}
+                              <p className="text-primary font-black text-base tracking-tighter">
+                                {formatPrice(item.price * (quantityInCart || 1))}
+                              </p>
+                            </div>
+                            
+                            {quantityInCart > 0 ? (
+                              <div className="flex items-center gap-2 bg-surface-container-low p-1 rounded-xl shadow-sm border border-on-surface/5">
+                                <motion.button
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={(e) => {
+                                    e?.stopPropagation?.();
+                                    updateQuantity(item.id, -1);
+                                  }}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                    darkMode 
+                                      ? 'bg-surface-container hover:bg-white/5 text-primary' 
+                                      : 'bg-white hover:bg-slate-50 text-primary shadow-[0_1px_3px_rgba(0,0,0,0.05)]'
+                                  }`}
+                                >
+                                  <Minus size={12} strokeWidth={3} />
+                                </motion.button>
+
+                                <span className="text-on-surface font-black text-xs px-1.5 min-w-[16px] text-center">
+                                  {quantityInCart}
+                                </span>
+
+                                <motion.button
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={(e) => {
+                                    e?.stopPropagation?.();
+                                    updateQuantity(item.id, 1);
+                                  }}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                    darkMode 
+                                      ? 'bg-surface-container hover:bg-white/5 text-primary' 
+                                      : 'bg-white hover:bg-slate-50 text-primary shadow-[0_1px_3px_rgba(0,0,0,0.05)]'
+                                  }`}
+                                >
+                                  <Plus size={12} strokeWidth={3} />
+                                </motion.button>
+                              </div>
+                            ) : (
+                              <AddToCartButton 
+                                onClick={() => addToCart(item)}
+                                darkMode={darkMode}
+                                disabled={item.isAvailable === false}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                    <div className="flex flex-col h-full">
+                      {/* Image Section */}
+                      <div className={`relative h-32 w-full overflow-hidden ${darkMode ? 'bg-surface-container-low' : 'bg-[#FDFBF7]'}`}>
                     {!item.isBundle && (
                       <button 
                         onClick={(e) => {
-                          e.stopPropagation();
+                          e?.stopPropagation?.();
                           toggleFavorite(item.id);
                         }}
                         className={`absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center transition-all duration-300 active:scale-90 ${
@@ -532,8 +665,10 @@ export default function MenuPage() {
                       />
                     </div>
                   </div>
-                </motion.div>
-              ))}
+                </div>
+              )}
+            </motion.div>
+              ); })}
             </div>
           ) : (
             <div className="py-24 text-center space-y-6">
@@ -599,11 +734,6 @@ export default function MenuPage() {
         darkMode={darkMode}
       />
 
-      <ProductDetailModal 
-        isOpen={!!selectedProduct} 
-        onClose={() => setSelectedProduct(null)} 
-        product={selectedProduct} 
-      />
     </div>
   );
 }
