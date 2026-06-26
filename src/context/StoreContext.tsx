@@ -1968,8 +1968,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Always fetch user's personal orders regardless of admin status
       const userOrdersQuery = query(
         collection(db, 'orders'), 
-        where('uid', '==', uid),
-        limit(20) // Optimization: Limit user's orders shown by default
+        where('uid', '==', uid)
       );
 
       unsubUserOrders = onSnapshot(userOrdersQuery, (snapshot) => {

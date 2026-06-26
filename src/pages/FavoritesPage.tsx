@@ -156,27 +156,11 @@ export default function FavoritesPage() {
                           <div className="flex flex-wrap items-center gap-1.5 mt-1 pb-2">
                             <span className={`inline-flex items-center gap-1 text-[9.5px] font-black px-2 py-1 rounded-lg ${
                               darkMode 
-                                ? 'bg-blue-500/10 text-blue-400 border border-blue-500/10' 
-                                : 'bg-blue-50 text-blue-600 border border-blue-100'
-                            }`}>
-                              <Eye size={10} strokeWidth={3} />
-                              <span>{language === 'mm' ? `ကြည့်ရှုမှု: ${stats.viewsCount} ကြိမ်` : `Views: ${stats.viewsCount}`}</span>
-                            </span>
-                            <span className={`inline-flex items-center gap-1 text-[9.5px] font-black px-2 py-1 rounded-lg ${
-                              darkMode 
                                 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10' 
                                 : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
                             }`}>
                               <ShoppingCart size={10} strokeWidth={3} />
                               <span>{language === 'mm' ? `ဝယ်ယူမှု: ${stats.purchaseCount} ကြိမ်` : `Purchased: ${stats.purchaseCount} times`}</span>
-                            </span>
-                            <span className={`inline-flex items-center gap-1 text-[9.5px] font-black px-2 py-1 rounded-lg ${
-                              darkMode 
-                                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/10' 
-                                : 'bg-rose-50 text-rose-600 border border-rose-100'
-                            }`}>
-                              <Heart size={10} fill="currentColor" strokeWidth={3} />
-                              <span>{language === 'mm' ? `စိတ်ဝင်စားသူ: ${stats.likesCount} ဦး` : `Likes: ${stats.likesCount}`}</span>
                             </span>
                           </div>
                         </div>
