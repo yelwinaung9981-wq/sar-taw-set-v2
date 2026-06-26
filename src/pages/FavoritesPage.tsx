@@ -6,10 +6,12 @@ import { AddToCartButton } from '../components/AddToCartButton';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { ProductDetailModal } from '../components/ui/ProductDetailModal';
 
 export default function FavoritesPage() {
   const { favorites, toggleFavorite, addToCart, cart, cartTotal, clearCart, t, darkMode, formatPrice, getMainName, getSecondaryName, getCategoryName, isProfileLoaded, products } = useStore();
   const navigate = useNavigate();
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
 
   const handleBack = () => {
     navigate(-1);
@@ -49,6 +51,7 @@ export default function FavoritesPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {favoriteProducts.map(product => (
               <motion.div 
+                onClick={() => setSelectedProduct(product)}
                 layout
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -159,6 +162,12 @@ export default function FavoritesPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ProductDetailModal 
+        isOpen={!!selectedProduct} 
+        onClose={() => setSelectedProduct(null)} 
+        product={selectedProduct} 
+      />
     </div>
   );
 }

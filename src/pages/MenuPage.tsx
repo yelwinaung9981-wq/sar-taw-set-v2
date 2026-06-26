@@ -16,6 +16,7 @@ import { db } from '../lib/firebase';
 import { PRODUCTS } from '../lib/seed';
 import { CATEGORIES } from '../constants';
 import { QRCodeModal } from '../components/ui/QRCodeModal';
+import { ProductDetailModal } from '../components/ui/ProductDetailModal';
 
 export default function MenuPage() {
   const [searchParams] = useSearchParams();
@@ -34,6 +35,7 @@ export default function MenuPage() {
   }, [promotionBanners]);
 
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
   const [itemRanks, setItemRanks] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -449,6 +451,7 @@ export default function MenuPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {filteredItems.map((item: any) => (
                 <motion.div 
+                  onClick={() => setSelectedProduct(item)}
                   initial={{ opacity: 0, y: 10 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
@@ -594,6 +597,12 @@ export default function MenuPage() {
         title={qrItem?.name || 'Product'}
         subtitle="Item QR Code"
         darkMode={darkMode}
+      />
+
+      <ProductDetailModal 
+        isOpen={!!selectedProduct} 
+        onClose={() => setSelectedProduct(null)} 
+        product={selectedProduct} 
       />
     </div>
   );

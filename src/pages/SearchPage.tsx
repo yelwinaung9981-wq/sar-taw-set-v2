@@ -13,6 +13,7 @@ import { db } from '../lib/firebase';
 import { useStore } from '../context/StoreContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from '@google/genai';
+import { ProductDetailModal } from '../components/ui/ProductDetailModal';
 
 const POPULAR_SEARCHES = ['Fresh Milk', 'Organic Eggs', 'Salmon', 'Avocado', 'Bread'];
 
@@ -47,6 +48,7 @@ export default function SearchPage() {
   
   // Filter & Sort State
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [sortBy, setSortBy] = useState('relevance');
   
@@ -459,6 +461,7 @@ export default function SearchPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {filteredProducts.map(product => (
               <motion.div 
+                onClick={() => setSelectedProduct(product)}
                 initial={{ opacity: 0, y: 10 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
@@ -721,6 +724,12 @@ export default function SearchPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ProductDetailModal 
+        isOpen={!!selectedProduct} 
+        onClose={() => setSelectedProduct(null)} 
+        product={selectedProduct} 
+      />
     </div>
   );
 }
