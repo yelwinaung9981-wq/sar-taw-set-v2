@@ -23,9 +23,24 @@ export default function MenuPage() {
     setRoomNumber, addToCart, updateQuantity, cartTotal, cart, roomNumber, clearCart,
     favorites, toggleFavorite, notifications, markNotificationAsRead, clearNotifications,
     t, darkMode, language, formatPrice, getMainName, getSecondaryName, getCategoryName, products,
-    promotionBanners, categories, deals, bundles, settings
+    promotionBanners, categories, deals, bundles, settings, orders
   } = useStore();
   const navigate = useNavigate();
+
+  const [sessionViews, setSessionViews] = useState<Record<string, number>>({});
+
+  const getProductStats = (productId: string) => {
+    const product = products.find(p => p.id === productId);
+    const dbSold = Math.max(0, product?.soldCount ?? 0);
+    const dbLikes = Math.max(0, product?.likesCount ?? 0);
+    const dbViews = Math.max(0, product?.viewsCount ?? 0);
+    const sessionViewCount = sessionViews[productId] || 0;
+    return { 
+      purchaseCount: dbSold, 
+      likesCount: dbLikes,
+      viewsCount: dbViews + sessionViewCount
+    };
+  };
 
   const activeBanners = useMemo(() => {
     return [...promotionBanners]
@@ -451,9 +466,19 @@ export default function MenuPage() {
               {filteredItems.map((item: any) => {
                 const cartItem = cart.find((c: any) => c.id === item.id);
                 const quantityInCart = cartItem ? cartItem.quantity : 0;
+                const stats = getProductStats(item.id);
                 return (
                   <motion.div 
-                    onClick={() => setSelectedProduct(selectedProduct?.id === item.id ? null : item)}
+                    onClick={() => {
+                      const isExpanding = selectedProduct?.id !== item.id;
+                      setSelectedProduct(isExpanding ? item : null);
+                      if (isExpanding) {
+                        setSessionViews(prev => ({
+                          ...prev,
+                          [item.id]: (prev[item.id] || 0) + 1
+                        }));
+                      }
+                    }}
                     initial={{ opacity: 0, y: 10 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
@@ -526,9 +551,35 @@ export default function MenuPage() {
                                 {item.description}
                               </p>
                             )}
-                            <p className="text-on-surface-variant/40 text-[8px] font-bold uppercase tracking-[0.1em] mt-2 pb-2">
+                            <p className="text-on-surface-variant/40 text-[8px] font-bold uppercase tracking-[0.1em] mt-2 pb-1">
                               {item.unit || (item.isBundle ? t('bundle') || 'Bundle' : '')}
                             </p>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1 pb-2">
+                              <span className={`inline-flex items-center gap-1 text-[9.5px] font-black px-2 py-1 rounded-lg ${
+                                darkMode 
+                                  ? 'bg-blue-500/10 text-blue-400 border border-blue-500/10' 
+                                  : 'bg-blue-50 text-blue-600 border border-blue-100'
+                              }`}>
+                                <Eye size={10} strokeWidth={3} />
+                                <span>{language === 'mm' ? `ကြည့်ရှုမှု: ${stats.viewsCount} ကြိမ်` : `Views: ${stats.viewsCount}`}</span>
+                              </span>
+                              <span className={`inline-flex items-center gap-1 text-[9.5px] font-black px-2 py-1 rounded-lg ${
+                                darkMode 
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10' 
+                                  : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                              }`}>
+                                <ShoppingCart size={10} strokeWidth={3} />
+                                <span>{language === 'mm' ? `ဝယ်ယူမှု: ${stats.purchaseCount} ကြိမ်` : `Purchased: ${stats.purchaseCount} times`}</span>
+                              </span>
+                              <span className={`inline-flex items-center gap-1 text-[9.5px] font-black px-2 py-1 rounded-lg ${
+                                darkMode 
+                                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/10' 
+                                  : 'bg-rose-50 text-rose-600 border border-rose-100'
+                              }`}>
+                                <Heart size={10} fill="currentColor" strokeWidth={3} />
+                                <span>{language === 'mm' ? `စိတ်ဝင်စားသူ: ${stats.likesCount} ဦး` : `Likes: ${stats.likesCount}`}</span>
+                              </span>
+                            </div>
                           </div>
 
                           <div className="mt-2 flex items-center justify-between border-t border-on-surface/5 pt-2 flex-shrink-0">

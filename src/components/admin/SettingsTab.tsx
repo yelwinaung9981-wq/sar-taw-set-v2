@@ -101,7 +101,8 @@ export function SettingsTab({
     authUid,
     shopPhone, setShopPhone,
     shopEmail, setShopEmail,
-    settings, updateSettings
+    settings, updateSettings,
+    backfillProductStats
   } = useStore();
 
   const [tempSupportNumber, setTempSupportNumber] = useState(supportNumber);
@@ -1328,6 +1329,32 @@ export function SettingsTab({
                   <div className="flex items-center gap-4">
                     <RefreshCw size={18} className={isMigrating ? 'animate-spin' : ''} />
                     <span>Synchronize Schema</span>
+                  </div>
+                  <Save size={16} className="opacity-0 group-hover:opacity-100 transition-all" />
+                </button>
+
+                <button
+                  onClick={async () => {
+                    const confirmSync = window.confirm("Calculate and sync real sales & likes count for all products from historical records?");
+                    if (confirmSync) {
+                      setIsSeeding(true);
+                      try {
+                        await backfillProductStats();
+                      } catch (err) {
+                        toast.error("Failed to sync stats");
+                      } finally {
+                        setIsSeeding(false);
+                      }
+                    }
+                  }}
+                  disabled={isSeeding}
+                  className={`group p-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-between ${
+                    isSeeding ? 'opacity-50' : 'hover:bg-purple-500 hover:text-white hover:shadow-xl hover:shadow-purple-500/20'
+                  } ${darkMode ? 'bg-white/5 text-purple-400' : 'bg-purple-50 text-purple-600 shadow-sm'}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <RefreshCw size={18} className={isSeeding ? 'animate-spin' : ''} />
+                    <span>Recalculate & Sync Product Stats</span>
                   </div>
                   <Save size={16} className="opacity-0 group-hover:opacity-100 transition-all" />
                 </button>
