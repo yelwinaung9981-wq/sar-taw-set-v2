@@ -66,7 +66,14 @@ export default function MenuPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const [itemRanks, setItemRanks] = useState<Record<string, number>>({});
+  const [itemRanks, setItemRanks] = useState<Record<string, number>>(() => {
+    try {
+      const stored = sessionStorage.getItem('sp_item_ranks');
+      return stored ? JSON.parse(stored) : {};
+    } catch (e) {
+      return {};
+    }
+  });
 
   useEffect(() => {
     if (selectedCategory === 'all') {
@@ -79,7 +86,15 @@ export default function MenuPage() {
             changed = true;
           }
         });
-        return changed ? newRanks : prev;
+        if (changed) {
+          try {
+            sessionStorage.setItem('sp_item_ranks', JSON.stringify(newRanks));
+          } catch (e) {
+            console.error(e);
+          }
+          return newRanks;
+        }
+        return prev;
       });
     }
   }, [selectedCategory, products]);
