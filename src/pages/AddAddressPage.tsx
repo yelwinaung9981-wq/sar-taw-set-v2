@@ -153,8 +153,73 @@ export default function AddAddressPage() {
     userPhone
   } = useStore();
 
-  const isMm = language === 'mm';
+  const isMm = language === 'mm' || language === 'my';
   const lexicon = isMm ? LEXICON.mm : LEXICON.en;
+
+  const getDualLanguageLabel = (field: 'address' | 'city' | 'state' | 'postcode' | 'addressDetails'): React.ReactNode => {
+    const baseLabels = {
+      address: "Street",
+      city: "City",
+      state: "State",
+      postcode: "Postcode",
+      addressDetails: "Address details"
+    };
+
+    const translationsMap: Record<string, Record<typeof field, string>> = {
+      en: {
+        address: "လမ်း",
+        city: "မြို့",
+        state: "ပြည်နယ်",
+        postcode: "စာတိုက်ကုဒ်",
+        addressDetails: "လိပ်စာအသေးစိတ်"
+      },
+      my: {
+        address: "လမ်း",
+        city: "မြို့",
+        state: "ပြည်နယ်",
+        postcode: "စာတိုက်ကုဒ်",
+        addressDetails: "လိပ်စာအသေးစိတ်"
+      },
+      mm: {
+        address: "လမ်း",
+        city: "မြို့",
+        state: "ပြည်နယ်",
+        postcode: "စာတိုက်ကုဒ်",
+        addressDetails: "လိပ်စာအသေးစိတ်"
+      },
+      th: {
+        address: "ถนน",
+        city: "เมือง",
+        state: "รัฐ",
+        postcode: "รหัสไปรษณีย์",
+        addressDetails: "รายละเอียดที่อยู่"
+      },
+      zh: {
+        address: "街道",
+        city: "城市",
+        state: "地区",
+        postcode: "邮政编码",
+        addressDetails: "详细地址"
+      },
+      ms: {
+        address: "Jalan",
+        city: "Bandar",
+        state: "Negeri",
+        postcode: "Poskod",
+        addressDetails: "Butiran Alamat"
+      }
+    };
+
+    const currentLang = (language || 'en').toLowerCase();
+    const langKey = translationsMap[currentLang] ? currentLang : 'en';
+    const translated = translationsMap[langKey][field];
+
+    return (
+      <span>
+        {baseLabels[field]} <span className="italic font-normal">({translated})</span>
+      </span>
+    );
+  };
 
 
 
@@ -522,7 +587,7 @@ export default function AddAddressPage() {
           {/* Address Line 1 */}
           <div className="space-y-1 pt-2 animate-fadeIn">
             <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>
-              {lexicon.fieldAddress}
+              {getDualLanguageLabel('address')}
             </label>
             <div className={`w-full h-10 rounded-xl overflow-hidden transition-all ${
               darkMode ? 'bg-[#181A1B]' : 'bg-[#F5F5F5]'
@@ -542,7 +607,7 @@ export default function AddAddressPage() {
           {/* City */}
           <div className="space-y-1">
             <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>
-              {isMm ? "မြို့နယ် / မြို့" : "City"}
+              {getDualLanguageLabel('city')}
             </label>
             <div className={`w-full h-10 rounded-xl overflow-hidden transition-all ${
               darkMode ? 'bg-[#181A1B]' : 'bg-[#F5F5F5]'
@@ -563,7 +628,7 @@ export default function AddAddressPage() {
               {/* State Input */}
               <div className="space-y-1">
                 <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>
-                  {isMm ? "ပြည်နယ် / တိုင်း" : "State"}
+                  {getDualLanguageLabel('state')}
                 </label>
                 <div className={`w-full h-10 rounded-xl overflow-hidden transition-all ${
                   darkMode ? 'bg-[#181A1B]' : 'bg-[#F5F5F5]'
@@ -583,7 +648,7 @@ export default function AddAddressPage() {
               {/* Postcode Input */}
               <div className="space-y-1">
                 <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>
-                  {isMm ? "စာပို့သင်္ကေတ" : "Postcode"}
+                  {getDualLanguageLabel('postcode')}
                 </label>
                 <div className={`w-full h-10 rounded-xl overflow-hidden transition-all ${
                   darkMode ? 'bg-[#181A1B]' : 'bg-[#F5F5F5]'
@@ -605,7 +670,7 @@ export default function AddAddressPage() {
           {/* Detailed Street/Building Details (Optional input) */}
           <div className="space-y-1">
             <label className={`text-xs font-bold ${darkMode ? 'text-zinc-500' : 'text-[#7D7D7D]'}`}>
-              {lexicon.fieldAddressDetails}
+              {getDualLanguageLabel('addressDetails')}
             </label>
             <div className={`w-full rounded-xl overflow-hidden ${
               darkMode ? 'bg-[#181A1B]' : 'bg-[#F5F5F5]'
