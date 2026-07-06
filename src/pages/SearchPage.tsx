@@ -537,7 +537,7 @@ export default function SearchPage() {
                     mass: 0.8
                   }}
                   style={{ order: computedOrder }}
-                  className={`${darkMode ? 'bg-surface-container-high' : 'bg-white'} rounded-[1.5rem] overflow-hidden relative group shadow-[0_2px_10px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.05)] ${selectedProduct?.id === product.id ? 'col-span-2' : 'flex flex-col h-full'}`}
+                  className={`${darkMode ? 'bg-surface-container-high' : 'bg-white'} rounded-xl overflow-hidden relative group shadow-[0_2px_10px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.05)] ${selectedProduct?.id === product.id ? 'col-span-2' : 'flex flex-col h-full'}`}
                 >
                   {selectedProduct?.id === product.id ? (
                     <div className="flex flex-row h-full min-h-[160px]">
