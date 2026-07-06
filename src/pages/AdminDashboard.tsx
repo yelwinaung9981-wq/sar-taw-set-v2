@@ -4873,6 +4873,81 @@ function CustomerDetailsView({
 
       </div>
 
+      {/* Profile Image Zoom Preview Overlay */}
+      <AnimatePresence>
+        {showImagePreview && customer.avatar && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => setShowImagePreview(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              transition={{ type: "spring", duration: 0.3 }}
+              className={`relative max-w-2xl w-full rounded-2xl overflow-hidden border shadow-2xl ${
+                darkMode ? "bg-zinc-950 border-white/10" : "bg-white border-slate-200"
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b dark:border-white/10 border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                    darkMode ? "bg-white/5 text-primary" : "bg-slate-100 text-primary"
+                  }`}>
+                    {customer.name ? customer.name.charAt(0).toUpperCase() : "?"}
+                  </div>
+                  <div>
+                    <h3 className={`text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
+                      {customer.name || "Customer Profile Picture"}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-medium">Profile Image Preview</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={customer.avatar}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`p-2 rounded-lg transition-all border shrink-0 ${
+                      darkMode 
+                        ? "bg-white/5 hover:bg-white/10 text-slate-300 border-white/5" 
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                    }`}
+                    title="Open in new tab / ပုံကြီးဖွင့်ရန်"
+                  >
+                    <ExternalLink size={14} className="stroke-[2.5]" />
+                  </a>
+                  <button
+                    onClick={() => setShowImagePreview(false)}
+                    className={`p-2 rounded-lg transition-all border shrink-0 ${
+                      darkMode 
+                        ? "bg-white/5 hover:bg-white/10 text-slate-300 border-white/5" 
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    <X size={14} className="stroke-[2.5]" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Image body */}
+              <div className="flex items-center justify-center p-6 bg-slate-950/20 dark:bg-black/40 min-h-[300px]">
+                <img
+                  src={customer.avatar}
+                  alt={customer.name || "Customer profile"}
+                  className="max-h-[70vh] w-auto max-w-full rounded-lg object-contain shadow-md"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
