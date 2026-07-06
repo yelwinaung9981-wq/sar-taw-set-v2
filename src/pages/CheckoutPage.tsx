@@ -629,7 +629,9 @@ export default function CheckoutPage() {
                           <div className="flex-grow">
                             <p className="text-[9px] font-bold text-white/70 uppercase tracking-widest mb-0.5">{bankName}</p>
                             <div className="flex items-center gap-2 mb-1">
-                              <p className="text-lg font-black tracking-widest font-mono drop-shadow-sm">{bankAccountNumber}</p>
+                              <p className="text-lg font-black tracking-widest font-mono drop-shadow-sm">
+                                {bankAccountNumber ? bankAccountNumber.replace(/\s+/g, '').replace(/(.{4})/g, '$1 ').trim() : ''}
+                              </p>
                               <button 
                                 type="button"
                                 onClick={handleCopy}

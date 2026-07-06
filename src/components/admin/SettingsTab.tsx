@@ -177,9 +177,15 @@ export function SettingsTab({
   const [tempCloudinaryUploadPreset, setTempCloudinaryUploadPreset] = useState(settings.cloudinaryUploadPreset || '');
   const [tempCloudinaryApiKey, setTempCloudinaryApiKey] = useState(settings.cloudinaryApiKey || '');
   const [tempCloudinaryApiSecret, setTempCloudinaryApiSecret] = useState(settings.cloudinaryApiSecret || '');
+  const formatBankNumber = (val: string) => {
+    if (!val) return '';
+    const clean = val.replace(/\s+/g, '');
+    return clean.replace(/(.{4})/g, '$1 ').trim();
+  };
+
   const [tempBankDetails, setTempBankDetails] = useState({
     name: bankName,
-    number: bankAccountNumber,
+    number: bankAccountNumber ? formatBankNumber(bankAccountNumber) : '',
     accountName: bankAccountName,
   });
 
@@ -195,7 +201,7 @@ export function SettingsTab({
   React.useEffect(() => {
     setTempBankDetails({
       name: bankName,
-      number: bankAccountNumber,
+      number: bankAccountNumber ? formatBankNumber(bankAccountNumber) : '',
       accountName: bankAccountName,
     });
   }, [bankName, bankAccountNumber, bankAccountName]);
@@ -1121,7 +1127,10 @@ export function SettingsTab({
                   <input 
                     type="text"
                     value={tempBankDetails.number}
-                    onChange={(e) => setTempBankDetails({...tempBankDetails, number: e.target.value})}
+                    onChange={(e) => {
+                      const formatted = formatBankNumber(e.target.value);
+                      setTempBankDetails({...tempBankDetails, number: formatted});
+                    }}
                     placeholder="e.g. 1234-5678-90"
                     className={`w-full px-6 py-4 rounded-2xl border text-sm font-black outline-none focus:border-primary transition-all ${
                       darkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-on-surface/5 shadow-inner'
