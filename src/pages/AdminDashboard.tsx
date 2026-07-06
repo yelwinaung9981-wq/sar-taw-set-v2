@@ -4880,7 +4880,7 @@ function CustomerDetailsView({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/70"
             onClick={() => setShowImagePreview(false)}
           >
             <motion.div
@@ -4888,7 +4888,7 @@ function CustomerDetailsView({
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 15 }}
               transition={{ type: "spring", duration: 0.3 }}
-              className={`relative max-w-2xl w-full rounded-2xl overflow-hidden border shadow-2xl ${
+              className={`relative max-w-2xl w-full rounded-2xl overflow-hidden border shadow-2xl my-auto ${
                 darkMode ? "bg-zinc-950 border-white/10" : "bg-white border-slate-200"
               }`}
               onClick={(e) => e.stopPropagation()}
@@ -4896,10 +4896,19 @@ function CustomerDetailsView({
               {/* Header */}
               <div className="flex items-center justify-between p-4 border-b dark:border-white/10 border-slate-100">
                 <div className="flex items-center gap-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                    darkMode ? "bg-white/5 text-primary" : "bg-slate-100 text-primary"
+                  <div className={`w-8 h-8 rounded-full overflow-hidden flex items-center justify-center shrink-0 border font-bold text-sm ${
+                    darkMode ? "bg-white/5 border-white/10 text-primary" : "bg-slate-100 border-slate-200 text-primary"
                   }`}>
-                    {customer.name ? customer.name.charAt(0).toUpperCase() : "?"}
+                    {customer.avatar ? (
+                      <img 
+                        src={customer.avatar} 
+                        alt="" 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <span>{customer.name ? customer.name.charAt(0).toUpperCase() : "?"}</span>
+                    )}
                   </div>
                   <div>
                     <h3 className={`text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
@@ -4936,11 +4945,11 @@ function CustomerDetailsView({
               </div>
 
               {/* Image body */}
-              <div className="flex items-center justify-center p-6 bg-slate-950/20 dark:bg-black/40 min-h-[300px]">
+              <div className="flex items-center justify-center p-6 bg-slate-950/20 dark:bg-black/40 min-h-[200px]">
                 <img
                   src={customer.avatar}
                   alt={customer.name || "Customer profile"}
-                  className="max-h-[70vh] w-auto max-w-full rounded-lg object-contain shadow-md"
+                  className="max-h-[320px] h-auto w-auto max-w-full rounded-lg object-contain shadow-md"
                   referrerPolicy="no-referrer"
                 />
               </div>
