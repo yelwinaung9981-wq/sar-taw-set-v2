@@ -67,6 +67,12 @@ const SettingRow = ({
   );
 };
 
+const formatBankNumber = (val: string) => {
+  if (!val) return '';
+  const clean = val.replace(/\s+/g, '');
+  return clean.replace(/(.{4})/g, '$1 ').trim();
+};
+
 export function SettingsTab({ 
   darkMode,
   handleSeed,
@@ -177,11 +183,6 @@ export function SettingsTab({
   const [tempCloudinaryUploadPreset, setTempCloudinaryUploadPreset] = useState(settings.cloudinaryUploadPreset || '');
   const [tempCloudinaryApiKey, setTempCloudinaryApiKey] = useState(settings.cloudinaryApiKey || '');
   const [tempCloudinaryApiSecret, setTempCloudinaryApiSecret] = useState(settings.cloudinaryApiSecret || '');
-  const formatBankNumber = (val: string) => {
-    if (!val) return '';
-    const clean = val.replace(/\s+/g, '');
-    return clean.replace(/(.{4})/g, '$1 ').trim();
-  };
 
   const [tempBankDetails, setTempBankDetails] = useState({
     name: bankName,

@@ -7288,7 +7288,7 @@ export default function AdminDashboard() {
       const tableData = catItems.map((item, idx) => [
         idx + 1,
         item.name,
-        `${item.total} ${item.unit}`,
+        `${item.total} x ${item.unit}`,
         "[  ]",
       ]);
 
@@ -8358,7 +8358,7 @@ export default function AdminDashboard() {
                                               >
                                                 <span className="tabular-nums">
                                                   {item.total}
-                                                </span>{" "}
+                                                </span><span className="text-[10px] mx-1 opacity-40 lowercase font-medium">x</span>
                                                 <span className="text-[9px] opacity-40 ml-0.5 lowercase font-medium">
                                                   {item.unit}
                                                 </span>
