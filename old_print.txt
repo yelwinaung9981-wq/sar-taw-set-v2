@@ -1,0 +1,183 @@
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Sales_Report_Thermal_${timeRange}</title>
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&family=Noto+Sans+Myanmar:wght@400;700;900&display=swap');
+              body {
+                font-family: "Inter", "Noto Sans Myanmar", sans-serif;
+                color: #000000;
+                background-color: #ffffff;
+                padding: 10px;
+                margin: 0;
+                width: 280px;
+                font-size: 21px;
+                line-height: 1.4;
+              }
+              .thermal-header {
+                text-align: center;
+                margin-bottom: 12px;
+              }
+              .thermal-title {
+                font-size: 23px;
+                font-weight: 900;
+                margin: 0;
+                text-transform: uppercase;
+              }
+              .thermal-subtitle {
+                font-size: 21px;
+                font-weight: 800;
+                margin: 4px 0 0 0;
+              }
+              .divider {
+                border-top: 1.5px dashed #000000;
+                margin: 10px 0;
+              }
+              .double-divider {
+                border-top: 3px double #000000;
+                margin: 10px 0;
+              }
+              .thermal-row {
+                display: flex;
+                justify-content: space-between;
+                font-weight: 700;
+                margin: 4px 0;
+                color: #000000;
+              }
+              .thermal-bold-row {
+                display: flex;
+                justify-content: space-between;
+                font-weight: 900;
+                font-size: 22px;
+                margin: 6px 0;
+                color: #000000;
+              }
+              .category-block {
+                margin-top: 12px;
+                margin-bottom: 8px;
+              }
+              .category-title-header {
+                font-weight: 900;
+                font-size: 22px;
+                text-transform: uppercase;
+                border-bottom: 1px dashed #000000;
+                padding-bottom: 2px;
+                margin-bottom: 6px;
+                color: #000000;
+              }
+              .section-header {
+                text-align: center;
+                font-weight: 900;
+                font-size: 22px;
+                margin-top: 15px;
+                margin-bottom: 6px;
+                text-transform: uppercase;
+                border-bottom: 1.5px solid #000000;
+                padding-bottom: 2px;
+                color: #000000;
+              }
+              .item-line {
+                font-weight: 700;
+                font-size: 22px;
+                color: #000000;
+                margin: 4px 0;
+              }
+              .footer {
+                text-align: center;
+                margin-top: 20px;
+                font-size: 15px;
+                font-weight: 800;
+                color: #000000;
+              }
+              @media print {
+                body {
+                  width: 100%;
+                  padding: 5px;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="thermal-header">
+              <h1 class="thermal-title">SAR TAW SET</h1>
+              <h2 class="thermal-subtitle">အရောင်းစာရင်းချုပ် (Thermal Report)</h2>
+              <div style="font-size: 11px; font-weight: 800; margin-top: 4px; color: #000000;">${periodLabel}</div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="thermal-row">
+              <span>ရက်စွဲကာလ:</span>
+              <span style="font-weight: 900; text-align: right; max-width: 180px;">${periodDates}</span>
+            </div>
+            <div class="thermal-row">
+              <span>ထုတ်ယူသည့်အချိန်:</span>
+              <span>${timestamp}</span>
+            </div>
+
+            <div class="double-divider"></div>
+
+            <div class="section-header">အမျိုးအစားအလိုက် ရောင်းရသည့် ပစ္စည်းများ</div>
+            ${categoryProductsLines}
+
+            <div class="double-divider"></div>
+
+            <div class="thermal-row">
+              <span>ပစ္စည်းစုစုပေါင်း တန်ဖိုး:</span>
+              <span>${formatPrice(totalProductSales)}</span>
+            </div>
+            <div class="thermal-row">
+              <span>စုစုပေါင်း ပို့ဆောင်ခ:</span>
+              <span>+${formatPrice(totalDeliveryFee || 0)}</span>
+            </div>
+            <div class="thermal-row" style="color: #c62828;">
+              <span>ပွိုင့်အသုံးပြုမှု (${totalPointsUsed || 0} PTS):</span>
+              <span>-${formatPrice(pointDiscountVal || 0)}</span>
+            </div>
+
+            <div class="double-divider"></div>
+
+            <div class="thermal-bold-row" style="font-size: 14px; border-bottom: 1.5px solid #000000; padding-bottom: 4px;">
+              <span>စုစုပေါင်းရောင်းရငွေ:</span>
+              <span>${formatPrice(finalNetRevenue)}</span>
+            </div>
+
+            <div class="thermal-row" style="margin-top: 10px;">
+              <span>အောင်မြင်သော အော်ဒါ:</span>
+              <span>${analyticsStats.deliveredOrders} / ${analyticsStats.totalOrders}</span>
+            </div>
+            <div class="thermal-row">
+              <span>ပျမ်းမျှ မှာယူမှု:</span>
+              <span>${formatPrice(analyticsStats.aov)}</span>
+            </div>
+            <div class="thermal-row">
+              <span>ပြင်ဆင်ဆဲ အော်ဒါ:</span>
+              <span>${analyticsStats.pipelineCount}</span>
+            </div>
+
+            <div class="section-header">ငွေပေးချေမှုအမျိုးအစား</div>
+            ${paymentsLines}
+
+            <div class="section-header">ပို့ဆောင်သူအလိုက် စာရင်း</div>
+            ${ridersLines}
+
+            <div class="divider"></div>
+
+            <div class="footer">
+              <p style="margin: 0;">*** စာရင်းချုပ်ပိတ်ပြီးပါပြီ ***</p>
+              <p style="margin: 4px 0 0 0;">SAR TAW SET ENTERPRISE</p>
+              <p style="margin: 2px 0 0 0; font-size: 9px; font-weight: 700;">Thank You for Managing Fresh Goods</p>
+            </div>
+
+            <script>
+              window.onload = function() {
+                setTimeout(() => {
+                  window.focus();
+                  window.print();
+                  window.close();
+                }, 1000);
+              };
+            </script>
+          </body>
+        </html>

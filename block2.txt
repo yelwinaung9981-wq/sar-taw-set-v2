@@ -1,0 +1,17 @@
+        categoryProductsLines = groupsArray.map((group) => {
+          const prodsHtml = Object.values(group.products)
+            .sort((a, b) => b.revenue - a.revenue)
+            .map((p) => `
+              <div class="thermal-row item-line">
+                <span>${p.quantity}x ${p.name}</span>
+                <span>${formatPrice(p.revenue)}</span>
+              </div>
+            `).join('');
+
+          return `
+            <div class="category-block">
+              <div class="category-title-header">[ \${group.categoryName} ]</div>
+              \${prodsHtml}
+            </div>
+          `;
+        }).join('');

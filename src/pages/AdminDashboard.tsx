@@ -77,6 +77,8 @@ import {
   ToggleLeft,
   ToggleRight,
   FileText,
+  Printer,
+  Receipt,
   KeyRound,
   Moon,
   Sun,
@@ -157,6 +159,1481 @@ const parseOrderDate = (createdAt: any, timestamp?: any): Date => {
   }
   return new Date();
 };
+
+function SalesReportTab({
+  orders,
+  products,
+  darkMode,
+  formatPrice,
+  categories,
+  t,
+}: {
+  orders: Order[];
+  products: Product[];
+  darkMode: boolean;
+  formatPrice: (p: number) => string;
+  categories: any[];
+  t: (key: string) => string;
+}) {
+  const [timeRange, setTimeRange] = useState<'today' | '7days' | '30days' | 'custom' | 'all'>('7days');
+  const [customStartDate, setCustomStartDate] = useState<string>(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [customEndDate, setCustomEndDate] = useState<string>(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+
+  // States for the newly added Detailed Product Sales Breakdown table
+  const [productSearch, setProductSearch] = useState('');
+  const [productSortBy, setProductSortBy] = useState<'revenue_desc' | 'revenue_asc' | 'qty_desc' | 'qty_asc' | 'price_desc' | 'name_asc'>('revenue_desc');
+  const [isProductBreakdownExpanded, setIsProductBreakdownExpanded] = useState(true);
+  const [isTransactionsLogExpanded, setIsTransactionsLogExpanded] = useState(true);
+
+  // Filter orders according to timeRange interactively
+  const filteredOrdersByTime = useMemo(() => {
+    const now = new Date();
+    return orders.filter(order => {
+      const orderDate = parseOrderDate(order.createdAt, order.timestamp);
+      
+      if (timeRange === 'today') {
+        const today = new Date();
+        return orderDate.getDate() === today.getDate() &&
+               orderDate.getMonth() === today.getMonth() &&
+               orderDate.getFullYear() === today.getFullYear();
+      } else if (timeRange === '7days') {
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return orderDate >= sevenDaysAgo;
+      } else if (timeRange === '30days') {
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        return orderDate >= thirtyDaysAgo;
+      } else if (timeRange === 'custom') {
+        if (customStartDate && customEndDate) {
+          const start = new Date(customStartDate);
+          start.setHours(0, 0, 0, 0);
+          const end = new Date(customEndDate);
+          end.setHours(23, 59, 59, 999);
+          return orderDate >= start && orderDate <= end;
+        }
+      }
+      return true; // all-time
+    });
+  }, [orders, timeRange, customStartDate, customEndDate]);
+
+  // Detailed products sales calculations (Product Name, Price, Quantity, Revenue)
+  const detailedProductSales = useMemo(() => {
+    const productsMap: Record<string, { 
+      id: string; 
+      name: string; 
+      price: number; 
+      quantity: number; 
+      revenue: number;
+    }> = {};
+
+    filteredOrdersByTime.forEach((order) => {
+      if (order.status === "cancelled") return;
+      order.items.forEach((item) => {
+        const key = item.id;
+        if (!productsMap[key]) {
+          productsMap[key] = {
+            id: item.id,
+            name: item.name || 'Unknown Product',
+            price: Number(item.price) || 0,
+            quantity: 0,
+            revenue: 0,
+          };
+        }
+        productsMap[key].quantity += (Number(item.quantity) || 0);
+        productsMap[key].revenue += (Number(item.price) || 0) * (Number(item.quantity) || 0);
+      });
+    });
+
+    return Object.values(productsMap);
+  }, [filteredOrdersByTime]);
+
+  const filteredAndSortedProducts = useMemo(() => {
+    let list = [...detailedProductSales];
+
+    // Search filter
+    if (productSearch.trim()) {
+      const query = productSearch.toLowerCase();
+      list = list.filter(p => p.name.toLowerCase().includes(query));
+    }
+
+    // Sort
+    list.sort((a, b) => {
+      if (productSortBy === 'revenue_desc') return b.revenue - a.revenue;
+      if (productSortBy === 'revenue_asc') return a.revenue - b.revenue;
+      if (productSortBy === 'qty_desc') return b.quantity - a.quantity;
+      if (productSortBy === 'qty_asc') return a.quantity - b.quantity;
+      if (productSortBy === 'price_desc') return b.price - a.price;
+      if (productSortBy === 'name_asc') return a.name.localeCompare(b.name);
+      return 0;
+    });
+
+    return list;
+  }, [detailedProductSales, productSearch, productSortBy]);
+
+  // Aggregate stats based on filtered orders
+  const salesStats = useMemo(() => {
+    const deliveredOrders = filteredOrdersByTime.filter((o) => o.status === "delivered");
+    const cancelledOrders = filteredOrdersByTime.filter((o) => o.status === "cancelled");
+    const totalRevenue = deliveredOrders.reduce((acc, o) => acc + o.total, 0);
+    const aov = deliveredOrders.length > 0 ? totalRevenue / deliveredOrders.length : 0;
+    
+    const cancellationRate = filteredOrdersByTime.length > 0 
+      ? (cancelledOrders.length / filteredOrdersByTime.length) * 100 
+      : 0;
+
+    const pipelineCount = filteredOrdersByTime.filter(
+      (o) => o.status !== "delivered" && o.status !== "cancelled"
+    ).length;
+
+    // Growth calculation (Current 7 Days vs Previous 7 Days based on delivered orders)
+    const now = new Date();
+    const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const prev7Days = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    const currentPeriodRev = orders
+      .filter((o) => parseOrderDate(o.createdAt, o.timestamp) >= last7Days && o.status === "delivered")
+      .reduce((acc, o) => acc + o.total, 0);
+
+    const prevPeriodRev = orders
+      .filter((o) => {
+        const d = parseOrderDate(o.createdAt, o.timestamp);
+        return d >= prev7Days && d < last7Days && o.status === "delivered";
+      })
+      .reduce((acc, o) => acc + o.total, 0);
+
+    const growth = prevPeriodRev > 0
+      ? ((currentPeriodRev - prevPeriodRev) / prevPeriodRev) * 100
+      : 0;
+
+    return {
+      aov,
+      growth,
+      cancellationRate,
+      totalOrders: filteredOrdersByTime.length,
+      deliveredOrders: deliveredOrders.length,
+      cancelledOrders: cancelledOrders.length,
+      totalRevenue,
+      pipelineCount,
+    };
+  }, [filteredOrdersByTime, orders]);
+
+  // Top categories split
+  const categoryData = useMemo(() => {
+    const cats: Record<string, number> = {};
+    filteredOrdersByTime.forEach((order) => {
+      if (order.status === "cancelled") return;
+      order.items.forEach((item) => {
+        cats[item.category] =
+          (cats[item.category] || 0) + (Number(item.price) || 0) * (Number(item.quantity) || 0);
+      });
+    });
+    return Object.entries(cats).map(([id, value]) => {
+      const cat = categories.find(c => c.id === id || c.key === id);
+      const name = cat ? (cat.nameEn || cat.name || id) : id;
+      return { name, value };
+    }).sort((a, b) => b.value - a.value);
+  }, [filteredOrdersByTime, categories]);
+
+  // High-performance products progress bars calculation
+  const topProducts = useMemo(() => {
+    const counts: Record<string, { name: string; quantity: number; revenue: number }> = {};
+    filteredOrdersByTime.forEach((order) => {
+      if (order.status === "cancelled") return;
+      order.items.forEach((item) => {
+        if (!counts[item.id]) {
+          counts[item.id] = { name: item.name || 'Unknown', quantity: 0, revenue: 0 };
+        }
+        counts[item.id].quantity += (Number(item.quantity) || 0);
+        counts[item.id].revenue += (Number(item.price) || 0) * (Number(item.quantity) || 0);
+      });
+    });
+    const result = Object.values(counts)
+      .sort((a, b) => b.revenue - a.revenue);
+    
+    const maxRevenue = result.length > 0 ? Math.max(...result.map(r => r.revenue)) : 1;
+    return result.map(p => ({
+      ...p,
+      percentage: Math.round((p.revenue / maxRevenue) * 100),
+    }));
+  }, [filteredOrdersByTime]);
+
+  // Payment methods list with calculation
+  const paymentStats = useMemo(() => {
+    const counts: Record<string, { count: number; total: number }> = {
+      cod: { count: 0, total: 0 },
+      kpay: { count: 0, total: 0 },
+      wave: { count: 0, total: 0 },
+      other: { count: 0, total: 0 }
+    };
+    filteredOrdersByTime.forEach((order) => {
+      if (order.status === "cancelled") return;
+      const method = (order.paymentMethod || "cod").toLowerCase();
+      const key = method === "cod" || method === "cash" ? "cod" :
+                  method === "kpay" || method === "kbzpay" ? "kpay" :
+                  method === "wave" || method === "wavepay" ? "wave" : "other";
+      
+      counts[key].count += 1;
+      counts[key].total += order.total;
+    });
+
+    const totalCalculatedRevenue = Object.values(counts).reduce((acc, c) => acc + c.total, 0) || 1;
+
+    return Object.entries(counts).map(([method, data]) => ({
+      method,
+      label: method === "cod" ? "Cash On Delivery (COD)" :
+             method === "kpay" ? "KBZPay Mobile" :
+             method === "wave" ? "WavePay Transfer" : "Other Payment",
+      count: data.count,
+      total: data.total,
+      percentage: Math.round((data.total / totalCalculatedRevenue) * 100)
+    })).sort((a, b) => b.total - a.total);
+  }, [filteredOrdersByTime]);
+
+  // Operational Rider distribution with statistics
+  const riderLeaderboard = useMemo(() => {
+    const list: Record<string, { name: string; count: number; total: number }> = {};
+    filteredOrdersByTime.forEach((order) => {
+      if (order.status !== "delivered") return;
+      const riderName = order.assignedToName || "In-Store Staff / Self-Pickup";
+      if (!list[riderName]) {
+        list[riderName] = { name: riderName, count: 0, total: 0 };
+      }
+      list[riderName].count += 1;
+      list[riderName].total += order.total;
+    });
+    return Object.values(list).sort((a, b) => b.count - a.count);
+  }, [filteredOrdersByTime]);
+
+  // Operational shifts summary
+  const shiftingAnalysis = useMemo(() => {
+    const shiftBuckets = {
+      breakfast: { label: "Breakfast Shift", hours: "6am - 11am", count: 0, total: 0 },
+      lunch: { label: "Lunch Rush", hours: "11am - 3pm", count: 0, total: 0 },
+      dinner: { label: "Dinner Shift", hours: "3pm - 8pm", count: 0, total: 0 },
+      late: { label: "Night Sessions", hours: "8pm - 6am", count: 0, total: 0 }
+    };
+    
+    filteredOrdersByTime.forEach((order) => {
+      if (order.status === "cancelled") return;
+      
+      const dateObj = parseOrderDate(order.createdAt, order.timestamp);
+      const hour = dateObj.getHours();
+      
+      if (hour >= 6 && hour < 11) {
+        shiftBuckets.breakfast.count += 1;
+        shiftBuckets.breakfast.total += order.total;
+      } else if (hour >= 11 && hour < 15) {
+        shiftBuckets.lunch.count += 1;
+        shiftBuckets.lunch.total += order.total;
+      } else if (hour >= 15 && hour < 20) {
+        shiftBuckets.dinner.count += 1;
+        shiftBuckets.dinner.total += order.total;
+      } else {
+        shiftBuckets.late.count += 1;
+        shiftBuckets.late.total += order.total;
+      }
+    });
+    
+    return Object.values(shiftBuckets).sort((a, b) => b.count - a.count);
+  }, [filteredOrdersByTime]);
+
+  const getPeriodLabel = () => {
+    switch (timeRange) {
+      case 'today':
+        return 'Daily Report (Today)';
+      case '7days':
+        return '7 Days Report';
+      case '30days':
+        return '30 Days Report';
+      case 'custom':
+        return 'Custom Period Report';
+      case 'all':
+        return 'Yearly / All-Time Report';
+      default:
+        return 'Sales Summary Report';
+    }
+  };
+
+  const getPeriodDates = () => {
+    const now = new Date();
+    const justDateFormatter = (d: Date) => d.toLocaleDateString("en-MY", {
+      timeZone: "Asia/Kuala_Lumpur",
+      day: "numeric",
+      month: "short",
+      year: "numeric"
+    });
+
+    if (timeRange === 'today') {
+      return justDateFormatter(now);
+    } else if (timeRange === '7days') {
+      const past = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return `${justDateFormatter(past)} - ${justDateFormatter(now)}`;
+    } else if (timeRange === '30days') {
+      const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return `${justDateFormatter(past)} - ${justDateFormatter(now)}`;
+    } else if (timeRange === 'custom') {
+      const start = new Date(customStartDate);
+      const end = new Date(customEndDate);
+      return `${justDateFormatter(start)} - ${justDateFormatter(end)}`;
+    } else {
+      return `All recorded transactions up to ${justDateFormatter(now)}`;
+    }
+  };
+
+  const handlePrintSummaryReportA4 = () => {
+    try {
+      const printWin = window.open("", "_blank");
+      if (!printWin) {
+        toast.error("Popup blocked! Please allow popups to see the print window.");
+        return;
+      }
+
+      const timestamp = new Date().toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" });
+      const periodLabel = getPeriodLabel();
+      const periodDates = getPeriodDates();
+
+      const categoriesTableHtml = categoryData.map((cat, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${cat.name}</td>
+          <td class="text-right" style="font-weight: 850;">${formatPrice(cat.value)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="3" style="text-align: center; color: #000;">No data available</td></tr>';
+
+      const productsTableHtml = topProducts.slice(0, 15).map((product, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${product.name}</td>
+          <td class="text-right">${product.quantity}</td>
+          <td class="text-right" style="font-weight: 850;">${formatPrice(product.revenue)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" style="text-align: center; color: #000;">No data available</td></tr>';
+
+      const paymentsTableHtml = paymentStats.map((pay, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${pay.label}</td>
+          <td class="text-right">${pay.count} tx</td>
+          <td class="text-right" style="font-weight: 850;">${formatPrice(pay.total)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" style="text-align: center; color: #000;">No data available</td></tr>';
+
+      const ridersTableHtml = riderLeaderboard.map((rider, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${rider.name}</td>
+          <td class="text-right">${rider.count} deliveries</td>
+          <td class="text-right" style="font-weight: 850;">${formatPrice(rider.total)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" style="text-align: center; color: #000;">No data available</td></tr>';
+
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Sales_Report_A4_${timeRange}</title>
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&family=Noto+Sans+Myanmar:wght@400;700;900&display=swap');
+              body {
+                font-family: "Inter", "Noto Sans Myanmar", sans-serif;
+                color: #000000;
+                background-color: #ffffff;
+                padding: 40px;
+                margin: 0;
+              }
+              .report-header {
+                text-align: center;
+                border-bottom: 4px double #000000;
+                padding-bottom: 16px;
+                margin-bottom: 24px;
+              }
+              .report-title {
+                font-size: 16px;
+                font-weight: 900;
+                margin: 0;
+                letter-spacing: -0.5px;
+                color: #000000;
+              }
+              .report-subtitle {
+                font-size: 11px;
+                font-weight: 900;
+                margin: 6px 0 0 0;
+                color: #000000;
+              }
+              .report-meta {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 24px;
+                font-size: 12px;
+                font-weight: 900;
+                border-bottom: 1px solid #000000;
+                padding-bottom: 8px;
+              }
+              .kpi-grid {
+                display: grid;
+                grid-template-cols: repeat(4, 1fr);
+                gap: 16px;
+                margin-bottom: 30px;
+              }
+              .kpi-box {
+                border: 2px solid #000000;
+                padding: 12px;
+                text-align: center;
+                background-color: #ffffff;
+              }
+              .kpi-title {
+                font-size: 9px;
+                font-weight: 900;
+                text-transform: uppercase;
+                margin-bottom: 6px;
+                color: #000000;
+              }
+              .kpi-value {
+                font-size: 18px;
+                font-weight: 900;
+                color: #000000;
+              }
+              .section-title {
+                font-size: 9px;
+                font-weight: 900;
+                text-transform: uppercase;
+                border-bottom: 2px solid #000000;
+                padding-bottom: 6px;
+                margin-top: 25px;
+                margin-bottom: 12px;
+                color: #000000;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+              }
+              th {
+                border-bottom: 2px solid #000000;
+                padding: 8px 6px;
+                font-size: 12px;
+                font-weight: 900;
+                text-align: left;
+                color: #000000;
+                text-transform: uppercase;
+              }
+              td {
+                border-bottom: 1px solid #000000;
+                padding: 8px 6px;
+                font-size: 12px;
+                font-weight: 700;
+                color: #000000;
+              }
+              .text-right {
+                text-align: right;
+              }
+              .footer-signatures {
+                display: flex;
+                justify-content: space-between;
+                margin-top: 60px;
+                padding-top: 30px;
+              }
+              .signature-line {
+                border-top: 1.5px solid #000000;
+                width: 220px;
+                text-align: center;
+                font-size: 9px;
+                font-weight: 900;
+                padding-top: 6px;
+                color: #000000;
+              }
+              .app-name {
+                text-align: center;
+                margin-top: 40px;
+                font-size: 9px;
+                font-weight: 900;
+                color: #000000;
+              }
+              @media print {
+                body {
+                  padding: 20px;
+                }
+                @page {
+                  margin: 1.5cm;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="report-header">
+              <h1 class="report-title">SAR TAW SET - SALES REPORT</h1>
+              <h2 class="report-subtitle">Sales Summary Report (${periodLabel})</h2>
+            </div>
+
+            <div class="report-meta">
+              <div>Period: <span style="font-weight: 900;">${periodDates}</span></div>
+              <div>Printed At: <span style="font-weight: 900;">${timestamp}</span></div>
+            </div>
+
+            <div class="kpi-grid">
+              <div class="kpi-box">
+                <div class="kpi-title">NET REVENUE</div>
+                <div class="kpi-value">${formatPrice(salesStats.totalRevenue)}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-title">CLOSED ORDERS</div>
+                <div class="kpi-value">${salesStats.deliveredOrders} / ${salesStats.totalOrders}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-title">AVG ORDER VALUE</div>
+                <div class="kpi-value">${formatPrice(salesStats.aov)}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-title">PIPELINE ORDERS</div>
+                <div class="kpi-value">${salesStats.pipelineCount}</div>
+              </div>
+            </div>
+
+            <h3 class="section-title">1. CATEGORY SALES BREAKDOWN</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 10%;">No.</th>
+                  <th style="width: 50%;">Category</th>
+                  <th class="text-right" style="width: 40%;">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${categoriesTableHtml}
+              </tbody>
+            </table>
+
+            <h3 class="section-title">2. TOP SELLING PRODUCTS</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 10%;">No.</th>
+                  <th style="width: 40%;">Product</th>
+                  <th class="text-right" style="width: 20%;">Qty</th>
+                  <th class="text-right" style="width: 30%;">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${productsTableHtml}
+              </tbody>
+            </table>
+
+            <h3 class="section-title">3. PAYMENT METHOD VOLUME</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 10%;">No.</th>
+                  <th style="width: 40%;">Payment Method</th>
+                  <th class="text-right" style="width: 20%;">Tx Count</th>
+                  <th class="text-right" style="width: 30%;">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${paymentsTableHtml}
+              </tbody>
+            </table>
+
+            <h3 class="section-title">4. DELIVERY RIDER PERFORMANCE</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 10%;">No.</th>
+                  <th style="width: 40%;">Rider Name</th>
+                  <th class="text-right" style="width: 20%;">Completed</th>
+                  <th class="text-right" style="width: 30%;">Volume</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${ridersTableHtml}
+              </tbody>
+            </table>
+
+            <div class="footer-signatures">
+              <div class="signature-line">Prepared By</div>
+              <div class="signature-line">Authorized By</div>
+            </div>
+
+            <div class="app-name">
+              SAR TAW SET - FRESH GROCERY SYSTEM
+            </div>
+
+            <script>
+              window.onload = function() {
+                setTimeout(() => {
+                  window.focus();
+                  window.print();
+                  window.close();
+                }, 1000);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWin.document.close();
+      toast.success("Opened standard A4 report print preview!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate report.");
+    }
+  };
+
+  const handlePrintSummaryReportThermal = () => {
+    try {
+      const printWin = window.open("", "_blank");
+      if (!printWin) {
+        toast.error("Popup blocked! Please allow popups to see the print window.");
+        return;
+      }
+
+      const timestamp = new Date().toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" });
+      const periodLabel = getPeriodLabel();
+      const periodDates = getPeriodDates();
+
+      // Calculate category-wise product sales and summaries
+      const categoryGroups: Record<string, {
+        categoryName: string;
+        products: Record<string, {
+          name: string;
+          quantity: number;
+          revenue: number;
+        }>;
+      }> = {};
+
+      let totalProductSales = 0;
+      let totalDeliveryFee = 0;
+      let totalPointsUsed = 0;
+      let rawPointDiscount = 0;
+
+      filteredOrdersByTime.forEach((order) => {
+        if (order.status === "cancelled") return;
+
+        totalDeliveryFee += (Number(order.deliveryFee) || 0);
+        totalPointsUsed += (Number(order.pointsUsed) || 0);
+        console.log("Order:", order.id, "DeliveryFee:", order.deliveryFee, "PointsUsed:", order.pointsUsed, "PointDiscount:", order.pointDiscount);
+        rawPointDiscount += (Number(order.pointDiscount) || 0);
+
+        order.items.forEach((item) => {
+          if (item.isCancelled) return;
+          const catId = item.category || 'uncategorized';
+          const catObj = categories.find(c => c.id === catId || c.key === catId);
+          const catName = catObj ? (catObj.nameEn || catObj.name || catId) : catId;
+
+          if (!categoryGroups[catId]) {
+            categoryGroups[catId] = {
+              categoryName: catName,
+              products: {}
+            };
+          }
+
+          const prodId = item.id;
+          if (!categoryGroups[catId].products[prodId]) {
+            categoryGroups[catId].products[prodId] = {
+              name: item.name || 'Unknown Product',
+              quantity: 0,
+              revenue: 0
+            };
+          }
+
+          const qty = Number(item.quantity) || 0;
+          const price = Number(item.price) || 0;
+          const revenue = qty * price;
+
+          categoryGroups[catId].products[prodId].quantity += qty;
+          categoryGroups[catId].products[prodId].revenue += revenue;
+          totalProductSales += revenue;
+        });
+      });
+
+      console.log("TotalDeliveryFee:", totalDeliveryFee, "TotalPointsUsed:", totalPointsUsed, "RawPointDiscount:", rawPointDiscount);
+      // Point rate calculation: 1000 points = RM 1.50 (1 point = RM 0.0015)
+      const pointDiscountVal = totalPointsUsed > 0 
+        ? (totalPointsUsed / 1000) * 1.50 
+        : rawPointDiscount;
+
+      const finalNetRevenue = totalProductSales + totalDeliveryFee - pointDiscountVal;
+
+      let categoryProductsLines = '';
+      const groupsArray = Object.values(categoryGroups).sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+      if (groupsArray.length === 0) {
+        categoryProductsLines = '<div style="text-align: center; color: #000; padding: 10px 0; font-weight: 700;">No sales records</div>';
+      } else {
+        categoryProductsLines = groupsArray.map((group) => {
+          const prodsHtml = Object.values(group.products)
+            .sort((a, b) => b.revenue - a.revenue)
+            .map((p) => `
+              <div class="thermal-row item-line">
+                <span>${p.quantity} x ${p.name}</span>
+                <span>${formatPrice(p.revenue)}</span>
+              </div>
+            `).join('');
+
+          return `
+            <div class="category-block">
+              <div class="category-title-header">[ ${group.categoryName} ]</div>
+              ${prodsHtml}
+            </div>
+          `;
+        }).join('');
+      }
+
+      const paymentsLines = paymentStats.map((pay) => `
+        <div class="thermal-row">
+          <span>${pay.label} (${pay.count} tx)</span>
+          <span>${formatPrice(pay.total)}</span>
+        </div>
+      `).join('') || '<div style="text-align: center; color: #000;">No Payment Records</div>';
+
+      const ridersLines = riderLeaderboard.map((rider) => `
+        <div class="thermal-row">
+          <span>${rider.name} (${rider.count} delv)</span>
+          <span>${formatPrice(rider.total)}</span>
+        </div>
+      `).join('') || '<div style="text-align: center; color: #000;">No Rider Records</div>';
+
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Sales_Report_Thermal_${timeRange}</title>
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Noto+Sans+Myanmar:wght@400;700;900&display=swap');
+              @page {
+                size: 58mm auto;
+                margin: 0;
+              }
+              body {
+                font-family: 'Space Mono', "Noto Sans Myanmar", monospace;
+                color: #000000 !important;
+                background-color: #ffffff;
+                padding: 2mm 1mm;
+                margin: 0;
+                width: 58mm;
+                font-size: 11px;
+                font-weight: 900;
+                line-height: 1.4;
+                box-sizing: border-box;
+              }
+              * {
+                color: #000000 !important;
+                font-weight: 900 !important;
+                box-sizing: border-box;
+              }
+              .thermal-header {
+                text-align: center;
+                margin-bottom: 15px;
+              }
+              .thermal-title {
+                font-size: 16px;
+                font-weight: 900;
+                margin: 0;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+              }
+              .thermal-subtitle {
+                font-size: 12px;
+                font-weight: 900;
+                margin: 4px 0 0 0;
+              }
+              .thermal-meta {
+                font-size: 9px;
+                font-weight: 900;
+                margin-top: 6px;
+              }
+              .divider {
+                border-top: 1px dashed #000000;
+                margin: 12px 0;
+              }
+              .double-divider {
+                border-top: 2px solid #000000;
+                border-bottom: 2px solid #000000;
+                height: 6px;
+                margin: 12px 0;
+              }
+              .thermal-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                font-weight: 900;
+                margin: 5px 0;
+                font-size: 9px;
+              }
+              .thermal-row > span:first-child {
+                flex: 1;
+                padding-right: 10px;
+              }
+              .thermal-row > span:last-child {
+                white-space: nowrap;
+                text-align: right;
+              }
+              .thermal-bold-row {
+                display: flex;
+                justify-content: space-between;
+                font-weight: 900;
+                font-size: 11px;
+                margin: 8px 0;
+                text-transform: uppercase;
+              }
+              .category-block {
+                margin-top: 12px;
+                margin-bottom: 8px;
+              }
+              .category-title-header {
+                font-weight: 900;
+                font-size: 9px;
+                text-transform: uppercase;
+                text-align: center;
+                margin-bottom: 6px;
+                color: #000000;
+              }
+              .section-header {
+                text-align: center;
+                font-weight: 900;
+                font-size: 12px;
+                margin-top: 16px;
+                margin-bottom: 10px;
+                text-transform: uppercase;
+                border-top: 1px solid #000000;
+                border-bottom: 1px solid #000000;
+                padding: 4px 0;
+              }
+              .item-line {
+                font-weight: 900;
+                font-size: 9px;
+                margin: 4px 0;
+              }
+              .footer {
+                text-align: center;
+                margin-top: 20px;
+                font-weight: 900;
+                font-size: 9px;
+              }
+              .footer-sub {
+                font-size: 9px;
+                font-weight: 900;
+                margin-top: 4px;
+              }
+              @media print {
+                body {
+                  width: 100%;
+                  max-width: 100%;
+                  padding: 0;
+                  margin: 0;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="thermal-header">
+              <h1 class="thermal-title">SAR TAW SET</h1>
+              <h2 class="thermal-subtitle">SALES REPORT</h2>
+              <div class="thermal-meta">${periodLabel}</div>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="thermal-row">
+              <span>Date:</span>
+              <span style="font-weight: 700; max-width: 180px; text-align: right;">${periodDates}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Time:</span>
+              <span>${timestamp}</span>
+            </div>
+            
+            <div class="double-divider"></div>
+            
+            <div class="section-header">CATEGORY-WISE SALES</div>
+            
+            ${categoryProductsLines}
+            
+            <div class="double-divider"></div>
+            
+            <div class="thermal-row">
+              <span>Gross Product Sales:</span>
+              <span>${formatPrice(totalProductSales)}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Total Delivery Fee:</span>
+              <span>+${formatPrice(totalDeliveryFee || 0)}</span>
+            </div>
+            <div class="thermal-row" style="color: #000; font-style: italic;">
+              <span>Points Used (${totalPointsUsed || 0} PTS):</span>
+              <span>-${formatPrice(pointDiscountVal || 0)}</span>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="thermal-bold-row">
+              <span>NET REVENUE:</span>
+              <span>${formatPrice(finalNetRevenue)}</span>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="thermal-row">
+              <span>Delivered Orders:</span>
+              <span>${salesStats.deliveredOrders} / ${salesStats.totalOrders}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Average Order Value:</span>
+              <span>${formatPrice(salesStats.aov)}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Pending Orders:</span>
+              <span>${salesStats.pipelineCount}</span>
+            </div>
+            
+            <div class="section-header">PAYMENT METHODS</div>
+            ${paymentsLines}
+            
+            <div class="section-header">RIDER PERFORMANCE</div>
+            ${ridersLines}
+            
+            <div class="double-divider"></div>
+            
+            <div class="footer">
+              <div>*** END OF REPORT ***</div>
+              <div style="margin-top: 6px;">SAR TAW SET ENTERPRISE</div>
+              <div class="footer-sub">Thank You for Managing Fresh Goods</div>
+            </div>
+            
+            <script>
+              window.onload = function() {
+                setTimeout(() => {
+                  window.focus();
+                  window.print();
+                  window.close();
+                }, 1000);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWin.document.close();
+      toast.success("Opened compact thermal report print preview!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate report.");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 1. Header Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className={`text-2xl font-black tracking-tight ${darkMode ? "text-white" : "text-emerald-950"}`}>
+            Sales Report & Reconciliation
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Analyze daily, weekly, and monthly sales reports and print reconciliation statements.
+          </p>
+        </div>
+
+        {/* Date Filter Pills & Custom Pickers */}
+        <div className="flex flex-col items-start sm:items-end gap-3 shrink-0">
+          <div className={`p-1.5 rounded-xl border flex flex-wrap gap-1 ${
+            darkMode ? "bg-black/25 border-white/5" : "bg-slate-100/70 border-slate-200/50"
+          }`}>
+            {([
+              { id: "today", label: "Today" },
+              { id: "7days", label: "7 Days" },
+              { id: "30days", label: "30 Days" },
+              { id: "custom", label: "Custom Range" },
+              { id: "all", label: "All Time" },
+            ] as const).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setTimeRange(tab.id)}
+                className={`px-3 py-1.5 text-[10px] uppercase font-black tracking-wider transition-all rounded-lg cursor-pointer ${
+                  timeRange === tab.id
+                    ? (darkMode ? "bg-primary text-white shadow-lg" : "bg-emerald-600 text-white shadow-sm")
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {timeRange === 'custom' && (
+            <div className="flex flex-wrap items-center gap-3 bg-slate-50 dark:bg-white/[0.02] p-3 rounded-xl border border-slate-100 dark:border-white/5 shadow-inner">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">From</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className={`px-3 py-1.5 text-xs rounded-xl border font-bold ${
+                    darkMode ? "bg-slate-900 border-white/10 text-white focus:border-primary focus:outline-none" : "bg-white border-slate-200 text-slate-800 focus:border-emerald-600 focus:outline-none shadow-sm"
+                  }`}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">To</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className={`px-3 py-1.5 text-xs rounded-xl border font-bold ${
+                    darkMode ? "bg-slate-900 border-white/10 text-white focus:border-primary focus:outline-none" : "bg-white border-slate-200 text-slate-800 focus:border-emerald-600 focus:outline-none shadow-sm"
+                  }`}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 1.5. Sales Summary Report Print Section */}
+      <div className={`p-3.5 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+        darkMode ? "bg-white/5 border-white/5" : "bg-emerald-50/50 border-emerald-100 shadow-sm"
+      }`}>
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-lg ${darkMode ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-600 text-white"}`}>
+            <Printer size={20} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className={`text-xs font-black tracking-tight ${darkMode ? "text-white" : "text-emerald-950"}`}>
+              Print Reconciliation Statement
+            </h4>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 max-w-2xl leading-relaxed">
+              Easily print sales summaries for the selected period ({timeRange === 'today' ? "Today" : timeRange === '7days' ? "7 Days" : timeRange === '30days' ? "30 Days" : "All Time"}) on A4 Format or compact 58/80mm Thermal paper.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {/* A4 Report Button */}
+          <button
+            onClick={handlePrintSummaryReportA4}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[10px] uppercase font-black tracking-wider transition-all cursor-pointer ${
+              darkMode
+                ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20"
+                : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+            }`}
+          >
+            <Printer size={13} strokeWidth={2.5} />
+            Print A4 Summary
+          </button>
+
+          {/* Thermal Report Button */}
+          <button
+            onClick={handlePrintSummaryReportThermal}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[10px] uppercase font-black tracking-wider transition-all cursor-pointer ${
+              darkMode
+                ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/20"
+                : "bg-slate-900 text-white hover:bg-black shadow-sm"
+            }`}
+          >
+            <Receipt size={13} strokeWidth={2.5} />
+            Print Thermal Summary
+          </button>
+        </div>
+      </div>
+
+      {/* 2. KPI Summary Ribbon */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* KPI 1: Net Revenue */}
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between ${
+          darkMode ? "bg-emerald-500/10 border-emerald-500/10" : "bg-emerald-50 border-emerald-100/70 shadow-sm"
+        }`}>
+          <div>
+            <p className={`text-[10px] font-black uppercase tracking-wider mb-0.5 ${darkMode ? "text-emerald-400" : "text-emerald-700"}`}>
+              Net Revenue
+            </p>
+            <h4 className={`text-lg font-black tracking-tight ${darkMode ? "text-white" : "text-emerald-950"}`}>
+              {formatPrice(salesStats.totalRevenue)}
+            </h4>
+          </div>
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className={`flex items-center gap-0.5 text-[8px] font-black px-1.5 py-0.5 rounded-full ${
+              salesStats.growth >= 0 
+                ? (darkMode ? "bg-emerald-500/20 text-emerald-400" : "bg-white text-emerald-700 shadow-sm")
+                : "bg-rose-100 text-rose-700"
+            }`}>
+              <TrendingUp size={10} className={salesStats.growth < 0 ? "rotate-180" : ""} />
+              {Math.abs(salesStats.growth).toFixed(0)}%
+            </span>
+            <span className={`text-[9px] font-bold ${darkMode ? "text-slate-400" : "text-emerald-600"}`}>vs last week</span>
+          </div>
+        </div>
+
+        {/* KPI 2: Total Orders */}
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between ${
+          darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"
+        }`}>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">
+              Closed Orders
+            </p>
+            <h4 className={`text-lg font-black tracking-tight ${darkMode ? "text-slate-100" : "text-slate-800"}`}>
+              {salesStats.deliveredOrders} <span className="text-[10px] text-slate-400 font-bold font-black">/ {salesStats.totalOrders} total</span>
+            </h4>
+          </div>
+          <p className="text-[9px] font-medium text-slate-400 mt-2">
+            {salesStats.cancelledOrders} cancelled • {salesStats.pipelineCount} in progress
+          </p>
+        </div>
+
+        {/* KPI 3: Average Ticket (AOV) */}
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between ${
+          darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"
+        }`}>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">
+              Average Order (AOV)
+            </p>
+            <h4 className={`text-lg font-black tracking-tight ${darkMode ? "text-slate-100" : "text-slate-800"}`}>
+              {formatPrice(salesStats.aov)}
+            </h4>
+          </div>
+          <p className="text-[9px] font-medium text-slate-400 mt-2">Value per delivery ticket</p>
+        </div>
+
+        {/* KPI 4: Cancellation Rate */}
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between ${
+          darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"
+        }`}>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">
+              Cancellation Rate
+            </p>
+            <h4 className={`text-lg font-black tracking-tight ${salesStats.cancellationRate > 15 ? "text-rose-500" : (darkMode ? "text-slate-100" : "text-slate-800")}`}>
+              {salesStats.cancellationRate.toFixed(1)}%
+            </h4>
+          </div>
+          <p className="text-[9px] font-medium text-slate-400 mt-2">Orders rejected or failed</p>
+        </div>
+      </div>
+
+      {/* 3. Breakdown Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Row 1, Col 1: Top Selling Products */}
+        <div className={`p-4 rounded-xl border ${darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"}`}>
+          <h3 className={`text-xs font-black tracking-tight mb-2.5 ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
+            Top Selling Products
+          </h3>
+          <div className="space-y-2.5">
+            {topProducts.slice(0, 6).map((product, idx) => (
+              <div key={idx} className="space-y-1">
+                <div className="flex justify-between text-[11px] font-bold">
+                  <span className={darkMode ? "text-slate-200" : "text-slate-800"}>{product.name}</span>
+                  <span className={darkMode ? "text-slate-400" : "text-slate-500"}>
+                    {product.quantity} sold • <span className="font-black text-emerald-500">{formatPrice(product.revenue)}</span>
+                  </span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden">
+                  <div 
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400" 
+                    style={{ width: `${product.percentage}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+            {topProducts.length === 0 && (
+              <div className="text-center py-4 text-[11px] text-slate-400 font-bold">No data available</div>
+            )}
+          </div>
+        </div>
+
+        {/* Row 1, Col 2: Rider Delivery Performance */}
+        <div className={`p-4 rounded-xl border ${darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"}`}>
+          <h3 className={`text-xs font-black tracking-tight mb-2.5 ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
+            Rider Distribution
+          </h3>
+          <div className="space-y-2">
+            {riderLeaderboard.map((rider, idx) => (
+              <div key={idx} className="flex items-center justify-between py-2 px-2.5 rounded-lg bg-slate-50/50 dark:bg-white/[0.02]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center font-black text-[10px]">
+                    {idx + 1}
+                  </div>
+                  <div>
+                    <span className={`text-[11px] font-bold block ${darkMode ? "text-slate-200" : "text-slate-800"}`}>{rider.name}</span>
+                    <span className="text-[9px] text-slate-400 font-medium">{rider.count} completed deliveries</span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-black text-emerald-500">{formatPrice(rider.total)}</span>
+              </div>
+            ))}
+            {riderLeaderboard.length === 0 && (
+              <div className="text-center py-4 text-[11px] text-slate-400 font-bold">No data available</div>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2, Col 1: Category Breakdown */}
+        <div className={`p-4 rounded-xl border ${darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"}`}>
+          <h3 className={`text-xs font-black tracking-tight mb-2.5 ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
+            Category Breakdown
+          </h3>
+          <div className="space-y-2">
+            {categoryData.map((cat, idx) => (
+              <div key={idx} className="flex items-center justify-between py-2 px-2.5 rounded-lg bg-slate-50/50 dark:bg-white/[0.02] border border-slate-100/50 dark:border-white/[0.03]">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className={`text-[11px] font-bold ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{cat.name}</span>
+                </div>
+                <span className={`text-[11px] font-black ${darkMode ? "text-white" : "text-slate-900"}`}>{formatPrice(cat.value)}</span>
+              </div>
+            ))}
+            {categoryData.length === 0 && (
+              <div className="text-center py-4 text-[11px] text-slate-400 font-bold">No data available</div>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2, Col 2: Payment reconciliation */}
+        <div className={`p-4 rounded-xl border ${darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"}`}>
+          <h3 className={`text-xs font-black tracking-tight mb-0.5 ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
+            Payment Reconciliation
+          </h3>
+          <p className="text-[9px] text-slate-400 dark:text-slate-500 mb-2 font-medium">
+            Reconciliation details for bank transfers and cash payments.
+          </p>
+          <div className="space-y-2">
+            {paymentStats.map((pay, idx) => (
+              <div key={idx} className="py-2 px-2.5 rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-100/60 dark:border-white/[0.04]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-[11px] font-black ${darkMode ? "text-slate-200" : "text-slate-800"}`}>{pay.label}</span>
+                  <span className="text-[11px] font-black text-emerald-500">{formatPrice(pay.total)}</span>
+                </div>
+                <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold">
+                  <span>{pay.count} transactions</span>
+                  <span>{pay.percentage}% of total</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Row 3 (Full Width): Operational Shift Sales Summary */}
+        <div className={`p-4 rounded-xl border md:col-span-2 ${darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"}`}>
+          <h3 className={`text-xs font-black tracking-tight mb-2.5 ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
+            Shift Sales Summary
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {shiftingAnalysis.map((shift, idx) => (
+              <div key={idx} className="py-2.5 px-3 rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-100/50 dark:border-white/[0.03] transition-all hover:shadow-sm">
+                <span className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">{shift.label}</span>
+                <span className="text-[8px] text-slate-400 block mb-1 font-medium">{shift.hours}</span>
+                <span className={`text-[11px] font-black block ${darkMode ? "text-white" : "text-slate-800"}`}>{formatPrice(shift.total)}</span>
+                <span className="text-[8px] text-slate-400 font-medium">{shift.count} orders processed</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 3.5. Detailed Product Sales Breakdown Table (Product Sales Breakdown) */}
+      <div className={`p-4 rounded-xl border ${darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"}`}>
+        <div 
+          onClick={() => setIsProductBreakdownExpanded(!isProductBreakdownExpanded)}
+          className="flex items-center justify-between cursor-pointer select-none group"
+        >
+          <div>
+            <h3 className={`text-xs font-black tracking-tight ${darkMode ? "text-slate-100" : "text-slate-900"} flex items-center gap-1.5`}>
+              Product Sales Breakdown
+              {isProductBreakdownExpanded ? (
+                <ChevronUp size={14} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+              ) : (
+                <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+              )}
+            </h3>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+              Detailed status of each product during the selected period (name, unit price, quantity sold, and total revenue).
+            </p>
+          </div>
+          <button 
+            type="button"
+            className={`text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded transition-colors ${
+              darkMode 
+                ? "bg-white/5 hover:bg-white/10 text-slate-300" 
+                : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+            }`}
+          >
+            {isProductBreakdownExpanded ? "Collapse" : "Expand"}
+          </button>
+        </div>
+
+        {isProductBreakdownExpanded && (
+          <div className="mt-4 border-t border-slate-100/50 dark:border-white/[0.02] pt-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full justify-end">
+                {/* Search Input */}
+                <div className="relative" onClick={(e) => e.stopPropagation()}>
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                    <Search size={12} />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search product name..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className={`pl-8 pr-3.5 py-1.5 w-full sm:w-52 text-[11px] font-bold rounded-lg border transition-all ${
+                      darkMode 
+                        ? "bg-slate-900 border-white/10 text-white placeholder-slate-500 focus:border-primary focus:outline-none" 
+                        : "bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white focus:border-emerald-600 focus:outline-none"
+                    }`}
+                  />
+                </div>
+
+                {/* Sort Dropdown */}
+                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <span className="text-[9px] font-black uppercase text-slate-400">Sort:</span>
+                  <select
+                    value={productSortBy}
+                    onChange={(e) => setProductSortBy(e.target.value as any)}
+                    className={`px-2.5 py-1.5 text-[11px] font-bold rounded-lg border cursor-pointer transition-all ${
+                      darkMode 
+                        ? "bg-slate-900 border-white/10 text-white focus:border-primary focus:outline-none" 
+                        : "bg-slate-50 border-slate-200 text-slate-800 focus:bg-white focus:border-emerald-600 focus:outline-none"
+                    }`}
+                  >
+                    <option value="revenue_desc">Revenue (High to Low)</option>
+                    <option value="revenue_asc">Revenue (Low to High)</option>
+                    <option value="qty_desc">Quantity (High to Low)</option>
+                    <option value="qty_asc">Quantity (Low to High)</option>
+                    <option value="price_desc">Price (High to Low)</option>
+                    <option value="name_asc">Alphabetical (A - Z)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Product Sales Data Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-white/5 text-left text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    <th className="pb-2 pr-4">#</th>
+                    <th className="pb-2 pr-4">Product Name</th>
+                    <th className="pb-2 pr-4 text-right">Price</th>
+                    <th className="pb-2 pr-4 text-right">Qty Sold</th>
+                    <th className="pb-2 text-right">Total Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAndSortedProducts.map((p, idx) => (
+                    <tr 
+                      key={p.id} 
+                      className="border-b border-slate-100/50 dark:border-white/[0.02] text-[11px] font-bold last:border-0 hover:bg-slate-50/30 dark:hover:bg-white/[0.01]"
+                    >
+                      <td className="py-2 pr-4 text-slate-400 font-mono text-[10px]">{(idx + 1).toString().padStart(2, '0')}</td>
+                      <td className={`py-2 pr-4 ${darkMode ? "text-white" : "text-slate-900"}`}>{p.name}</td>
+                      <td className="py-2 pr-4 text-right text-slate-500 font-mono">{formatPrice(p.price)}</td>
+                      <td className="py-2 pr-4 text-right text-slate-600 dark:text-slate-300 font-mono">
+                        {p.quantity} <span className="text-[9px] text-slate-400">units</span>
+                      </td>
+                      <td className="py-2 text-right font-black text-emerald-500 font-mono">{formatPrice(p.revenue)}</td>
+                    </tr>
+                  ))}
+                  {filteredAndSortedProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center py-6 text-[11px] text-slate-400 font-bold">
+                        No products match your search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 4. Live Sales Log */}
+      <div className={`p-4 rounded-xl border ${darkMode ? "bg-white/5 border-white/5" : "bg-white border-slate-100 shadow-sm"}`}>
+        <div 
+          onClick={() => setIsTransactionsLogExpanded(!isTransactionsLogExpanded)}
+          className="flex items-center justify-between cursor-pointer select-none group"
+        >
+          <div>
+            <h3 className={`text-xs font-black tracking-tight ${darkMode ? "text-slate-100" : "text-slate-900"} flex items-center gap-1.5`}>
+              Selected Period Transactions Log
+              {isTransactionsLogExpanded ? (
+                <ChevronUp size={14} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+              ) : (
+                <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+              )}
+            </h3>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+              List of recent orders and transactions recorded during the selected period.
+            </p>
+          </div>
+          <button 
+            type="button"
+            className={`text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded transition-colors ${
+              darkMode 
+                ? "bg-white/5 hover:bg-white/10 text-slate-300" 
+                : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+            }`}
+          >
+            {isTransactionsLogExpanded ? "Collapse" : "Expand"}
+          </button>
+        </div>
+
+        {isTransactionsLogExpanded && (
+          <div className="overflow-x-auto mt-4 border-t border-slate-100/50 dark:border-white/[0.02] pt-4">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-white/5 text-left text-[9px] font-black uppercase tracking-wider text-slate-400">
+                  <th className="pb-2 pr-4">Order ID</th>
+                  <th className="pb-2 pr-4">Date / Time</th>
+                  <th className="pb-2 pr-4">Customer</th>
+                  <th className="pb-2 pr-4">Payment</th>
+                  <th className="pb-2 pr-4">Rider</th>
+                  <th className="pb-2 pr-4">Status</th>
+                  <th className="pb-2 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredOrdersByTime.slice(0, 15).map((order) => {
+                  const dateObj = parseOrderDate(order.createdAt, order.timestamp);
+                  const orderTimeStr = dateObj.toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+                  return (
+                    <tr key={order.id} className="border-b border-slate-100/50 dark:border-white/[0.02] text-[11px] font-bold last:border-0 hover:bg-slate-50/30 dark:hover:bg-white/[0.01]">
+                      <td className="py-2 pr-4 font-mono text-[9px] text-slate-400">#{order.id.slice(0, 6)}</td>
+                      <td className="py-2 pr-4 text-slate-500">{orderTimeStr}</td>
+                      <td className={`py-2 pr-4 ${darkMode ? "text-white" : "text-slate-900"}`}>{order.customerName}</td>
+                      <td className="py-2 pr-4 font-mono uppercase text-[9px] text-slate-500">{order.paymentMethod || "COD"}</td>
+                      <td className="py-2 pr-4 text-slate-500">{order.assignedToName || "In-Store"}</td>
+                      <td className="py-2 pr-4">
+                        <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase ${
+                          order.status === "delivered" 
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
+                            : order.status === "cancelled"
+                              ? "bg-rose-100 text-rose-800 dark:bg-rose-500/10 dark:text-rose-400"
+                              : "bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400"
+                        }`}>
+                          {order.status}
+                        </span>
+                      </td>
+                      <td className="py-2 text-right font-black text-emerald-500">{formatPrice(order.total)}</td>
+                    </tr>
+                  );
+                })}
+                {filteredOrdersByTime.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-center py-6 text-[11px] text-slate-400 font-black">
+                      No transactions found in the selected period.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function AnalyticsTab({
   orders,
@@ -473,6 +1950,680 @@ function AnalyticsTab({
   }, [filteredOrdersByTime]);
 
   const COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6"];
+
+  const getPeriodLabel = () => {
+    switch (timeRange) {
+      case 'today':
+        return 'Today (Daily Report)';
+      case '7days':
+        return '7 Days (Weekly Report)';
+      case '30days':
+        return '30 Days (Monthly Report)';
+      case 'all':
+        return 'Yearly / All-Time Report';
+      default:
+        return 'Sales Summary Report';
+    }
+  };
+
+  const getPeriodDates = () => {
+    const now = new Date();
+    const justDateFormatter = (d: Date) => d.toLocaleDateString("en-MY", {
+      timeZone: "Asia/Kuala_Lumpur",
+      day: "numeric",
+      month: "short",
+      year: "numeric"
+    });
+
+    if (timeRange === 'today') {
+      return justDateFormatter(now);
+    } else if (timeRange === '7days') {
+      const past = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return `${justDateFormatter(past)} - ${justDateFormatter(now)}`;
+    } else if (timeRange === '30days') {
+      const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return `${justDateFormatter(past)} - ${justDateFormatter(now)}`;
+    } else {
+      return `All Records (All recorded transactions up to ${justDateFormatter(now)})`;
+    }
+  };
+
+  const handlePrintSummaryReportA4 = () => {
+    try {
+      const printWin = window.open("", "_blank");
+      if (!printWin) {
+        toast.error("Popup blocked! Please allow popups to see the print window.");
+        return;
+      }
+
+      const timestamp = new Date().toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" });
+      const periodLabel = getPeriodLabel();
+      const periodDates = getPeriodDates();
+
+      const categoriesTableHtml = categoryData.map((cat, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${cat.name}</td>
+          <td class="text-right" style="font-weight: 850;">${formatPrice(cat.value)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="3" style="text-align: center; color: #000;">No Data Available</td></tr>';
+
+      const productsTableHtml = topProducts.map((product, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${product.name}</td>
+          <td class="text-right">${product.quantity}</td>
+          <td class="text-right" style="font-weight: 850;">${formatPrice(product.revenue)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" style="text-align: center; color: #000;">No Data Available</td></tr>';
+
+      const paymentsTableHtml = paymentStats.map((pay, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${pay.label}</td>
+          <td class="text-right">${pay.count} tx</td>
+          <td class="text-right" style="font-weight: 850;">${formatPrice(pay.total)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" style="text-align: center; color: #000;">No Data Available</td></tr>';
+
+      const ridersTableHtml = riderLeaderboard.map((rider, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${rider.name}</td>
+          <td class="text-right">${rider.count} deliveries</td>
+          <td class="text-right" style="font-weight: 850;">${formatPrice(rider.total)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" style="text-align: center; color: #000;">No Data Available</td></tr>';
+
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Sales_Report_A4_${timeRange}</title>
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&family=Noto+Sans+Myanmar:wght@400;700;900&display=swap');
+              body {
+                font-family: "Inter", "Noto Sans Myanmar", sans-serif;
+                color: #000000;
+                background-color: #ffffff;
+                padding: 40px;
+                margin: 0;
+              }
+              .report-header {
+                text-align: center;
+                border-bottom: 4px double #000000;
+                padding-bottom: 16px;
+                margin-bottom: 24px;
+              }
+              .report-title {
+                font-size: 16px;
+                font-weight: 900;
+                margin: 0;
+                letter-spacing: -0.5px;
+                color: #000000;
+              }
+              .report-subtitle {
+                font-size: 11px;
+                font-weight: 900;
+                margin: 6px 0 0 0;
+                color: #000000;
+              }
+              .report-meta {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 24px;
+                font-size: 12px;
+                font-weight: 900;
+                border-bottom: 1px solid #000000;
+                padding-bottom: 8px;
+              }
+              .kpi-grid {
+                display: grid;
+                grid-template-cols: repeat(4, 1fr);
+                gap: 16px;
+                margin-bottom: 30px;
+              }
+              .kpi-box {
+                border: 2px solid #000000;
+                padding: 12px;
+                text-align: center;
+                background-color: #ffffff;
+              }
+              .kpi-title {
+                font-size: 9px;
+                font-weight: 900;
+                text-transform: uppercase;
+                margin-bottom: 6px;
+                color: #000000;
+              }
+              .kpi-value {
+                font-size: 18px;
+                font-weight: 900;
+                color: #000000;
+              }
+              .section-title {
+                font-size: 9px;
+                font-weight: 900;
+                text-transform: uppercase;
+                border-bottom: 2px solid #000000;
+                padding-bottom: 6px;
+                margin-top: 25px;
+                margin-bottom: 12px;
+                color: #000000;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+              }
+              th {
+                border-bottom: 2px solid #000000;
+                padding: 8px 6px;
+                font-size: 12px;
+                font-weight: 900;
+                text-align: left;
+                color: #000000;
+                text-transform: uppercase;
+              }
+              td {
+                border-bottom: 1px solid #000000;
+                padding: 8px 6px;
+                font-size: 12px;
+                font-weight: 700;
+                color: #000000;
+              }
+              .text-right {
+                text-align: right;
+              }
+              .footer-signatures {
+                display: flex;
+                justify-content: space-between;
+                margin-top: 60px;
+                padding-top: 30px;
+              }
+              .signature-line {
+                border-top: 1.5px solid #000000;
+                width: 220px;
+                text-align: center;
+                font-size: 9px;
+                font-weight: 900;
+                padding-top: 6px;
+                color: #000000;
+              }
+              .app-name {
+                text-align: center;
+                margin-top: 40px;
+                font-size: 9px;
+                font-weight: 900;
+                color: #000000;
+              }
+              @media print {
+                body {
+                  padding: 20px;
+                }
+                @page {
+                  margin: 1.5cm;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="report-header">
+              <h1 class="report-title">SAR TAW SET - SALES REPORT</h1>
+              <h2 class="report-subtitle">Sales Summary Report (${periodLabel})</h2>
+            </div>
+
+            <div class="report-meta">
+              <div>Period: <span style="font-weight: 900;">${periodDates}</span></div>
+              <div>Generated At: <span style="font-weight: 900;">${timestamp}</span></div>
+            </div>
+
+            <div class="kpi-grid">
+              <div class="kpi-box">
+                <div class="kpi-title">NET REVENUE</div>
+                <div class="kpi-value">${formatPrice(analyticsStats.totalRevenue)}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-title">CLOSED ORDERS</div>
+                <div class="kpi-value">${analyticsStats.deliveredOrders} / ${analyticsStats.totalOrders}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-title">AVG ORDER VALUE</div>
+                <div class="kpi-value">${formatPrice(analyticsStats.aov)}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-title">PIPELINE ORDERS</div>
+                <div class="kpi-value">${analyticsStats.pipelineCount}</div>
+              </div>
+            </div>
+
+            <h3 class="section-title">1. CATEGORY SALES BREAKDOWN</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 10%;">No.</th>
+                  <th style="width: 50%;">Category Name</th>
+                  <th class="text-right" style="width: 40%;">Total Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${categoriesTableHtml}
+              </tbody>
+            </table>
+
+            <h3 class="section-title">2. TOP SELLING PRODUCTS</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 10%;">No.</th>
+                  <th style="width: 40%;">Product Name</th>
+                  <th class="text-right" style="width: 20%;">Qty</th>
+                  <th class="text-right" style="width: 30%;">Total Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${productsTableHtml}
+              </tbody>
+            </table>
+
+            <h3 class="section-title">3. PAYMENT METHOD VOLUME</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 10%;">No.</th>
+                  <th style="width: 40%;">PAYMENT METHODS (Payment Method)</th>
+                  <th class="text-right" style="width: 20%;">Transaction Count</th>
+                  <th class="text-right" style="width: 30%;">Total Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${paymentsTableHtml}
+              </tbody>
+            </table>
+
+            <h3 class="section-title">4. DELIVERY RIDER PERFORMANCE</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 10%;">No.</th>
+                  <th style="width: 40%;">Rider Name</th>
+                  <th class="text-right" style="width: 20%;">Completed Deliveries</th>
+                  <th class="text-right" style="width: 30%;">Total Delivery Volume</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${ridersTableHtml}
+              </tbody>
+            </table>
+
+            <div class="footer-signatures">
+              <div class="signature-line">Prepared By</div>
+              <div class="signature-line">Authorized By</div>
+            </div>
+
+            <div class="app-name">
+              SAR TAW SET - FRESH GROCERY SYSTEM
+            </div>
+
+            <script>
+              window.onload = function() {
+                setTimeout(() => {
+                  window.focus();
+                  window.print();
+                  window.close();
+                }, 1000);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWin.document.close();
+      toast.success("Opened standard A4 report print preview!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate report.");
+    }
+  };
+
+  const handlePrintSummaryReportThermal = () => {
+    try {
+      const printWin = window.open("", "_blank");
+      if (!printWin) {
+        toast.error("Popup blocked! Please allow popups to see the print window.");
+        return;
+      }
+
+      const timestamp = new Date().toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" });
+      const periodLabel = getPeriodLabel();
+      const periodDates = getPeriodDates();
+
+      // Calculate category-wise product sales and summaries
+      const categoryGroups: Record<string, {
+        categoryName: string;
+        products: Record<string, {
+          name: string;
+          quantity: number;
+          revenue: number;
+        }>;
+      }> = {};
+
+      let totalProductSales = 0;
+      let totalDeliveryFee = 0;
+      let totalPointsUsed = 0;
+      let rawPointDiscount = 0;
+
+      filteredOrdersByTime.forEach((order) => {
+        if (order.status === "cancelled") return;
+
+        totalDeliveryFee += (Number(order.deliveryFee) || 0);
+        totalPointsUsed += (Number(order.pointsUsed) || 0);
+        console.log("Order:", order.id, "DeliveryFee:", order.deliveryFee, "PointsUsed:", order.pointsUsed, "PointDiscount:", order.pointDiscount);
+        rawPointDiscount += (Number(order.pointDiscount) || 0);
+
+        order.items.forEach((item) => {
+          if (item.isCancelled) return;
+          const catId = item.category || 'uncategorized';
+          const catObj = categories.find(c => c.id === catId || c.key === catId);
+          const catName = catObj ? (catObj.nameEn || catObj.name || catId) : catId;
+
+          if (!categoryGroups[catId]) {
+            categoryGroups[catId] = {
+              categoryName: catName,
+              products: {}
+            };
+          }
+
+          const prodId = item.id;
+          if (!categoryGroups[catId].products[prodId]) {
+            categoryGroups[catId].products[prodId] = {
+              name: item.name || 'Unknown Product',
+              quantity: 0,
+              revenue: 0
+            };
+          }
+
+          const qty = Number(item.quantity) || 0;
+          const price = Number(item.price) || 0;
+          const revenue = qty * price;
+
+          categoryGroups[catId].products[prodId].quantity += qty;
+          categoryGroups[catId].products[prodId].revenue += revenue;
+          totalProductSales += revenue;
+        });
+      });
+
+      console.log("TotalDeliveryFee:", totalDeliveryFee, "TotalPointsUsed:", totalPointsUsed, "RawPointDiscount:", rawPointDiscount);
+      // Point rate calculation: 1000 points = RM 1.50 (1 point = RM 0.0015)
+      const pointDiscountVal = totalPointsUsed > 0 
+        ? (totalPointsUsed / 1000) * 1.50 
+        : rawPointDiscount;
+
+      const finalNetRevenue = totalProductSales + totalDeliveryFee - pointDiscountVal;
+
+      let categoryProductsLines = '';
+      const groupsArray = Object.values(categoryGroups).sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+      if (groupsArray.length === 0) {
+        categoryProductsLines = '<div style="text-align: center; color: #000; padding: 10px 0; font-weight: 700;">No sales records</div>';
+      } else {
+        categoryProductsLines = groupsArray.map((group) => {
+          const prodsHtml = Object.values(group.products)
+            .sort((a, b) => b.revenue - a.revenue)
+            .map((p) => `
+              <div class="thermal-row item-line">
+                <span>${p.quantity} x ${p.name}</span>
+                <span>${formatPrice(p.revenue)}</span>
+              </div>
+            `).join('');
+
+          return `
+            <div class="category-block">
+              <div class="category-title-header">[ ${group.categoryName} ]</div>
+              ${prodsHtml}
+            </div>
+          `;
+        }).join('');
+      }
+
+      const paymentsLines = paymentStats.map((pay) => `
+        <div class="thermal-row">
+          <span>${pay.label} (${pay.count} tx)</span>
+          <span>${formatPrice(pay.total)}</span>
+        </div>
+      `).join('') || '<div style="text-align: center; color: #000;">No Payment Records</div>';
+
+      const ridersLines = riderLeaderboard.map((rider) => `
+        <div class="thermal-row">
+          <span>${rider.name} (${rider.count} delv)</span>
+          <span>${formatPrice(rider.total)}</span>
+        </div>
+      `).join('') || '<div style="text-align: center; color: #000;">No Rider Records</div>';
+
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Sales_Report_Thermal_${timeRange}</title>
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Noto+Sans+Myanmar:wght@400;700;900&display=swap');
+              @page {
+                size: 58mm auto;
+                margin: 0;
+              }
+              body {
+                font-family: 'Space Mono', "Noto Sans Myanmar", monospace;
+                color: #000000 !important;
+                background-color: #ffffff;
+                padding: 2mm 1mm;
+                margin: 0;
+                width: 58mm;
+                font-size: 11px;
+                font-weight: 900;
+                line-height: 1.4;
+                box-sizing: border-box;
+              }
+              * {
+                color: #000000 !important;
+                font-weight: 900 !important;
+                box-sizing: border-box;
+              }
+              .thermal-header {
+                text-align: center;
+                margin-bottom: 15px;
+              }
+              .thermal-title {
+                font-size: 16px;
+                font-weight: 900;
+                margin: 0;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+              }
+              .thermal-subtitle {
+                font-size: 12px;
+                font-weight: 900;
+                margin: 4px 0 0 0;
+              }
+              .thermal-meta {
+                font-size: 9px;
+                font-weight: 900;
+                margin-top: 6px;
+              }
+              .divider {
+                border-top: 1px dashed #000000;
+                margin: 12px 0;
+              }
+              .double-divider {
+                border-top: 2px solid #000000;
+                border-bottom: 2px solid #000000;
+                height: 6px;
+                margin: 12px 0;
+              }
+              .thermal-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                font-weight: 900;
+                margin: 5px 0;
+                font-size: 9px;
+              }
+              .thermal-row > span:first-child {
+                flex: 1;
+                padding-right: 10px;
+              }
+              .thermal-row > span:last-child {
+                white-space: nowrap;
+                text-align: right;
+              }
+              .thermal-bold-row {
+                display: flex;
+                justify-content: space-between;
+                font-weight: 900;
+                font-size: 11px;
+                margin: 8px 0;
+                text-transform: uppercase;
+              }
+              .category-block {
+                margin-top: 12px;
+                margin-bottom: 8px;
+              }
+              .category-title-header {
+                font-weight: 900;
+                font-size: 9px;
+                text-transform: uppercase;
+                text-align: center;
+                margin-bottom: 6px;
+                color: #000000;
+              }
+              .section-header {
+                text-align: center;
+                font-weight: 900;
+                font-size: 12px;
+                margin-top: 16px;
+                margin-bottom: 10px;
+                text-transform: uppercase;
+                border-top: 1px solid #000000;
+                border-bottom: 1px solid #000000;
+                padding: 4px 0;
+              }
+              .item-line {
+                font-weight: 900;
+                font-size: 9px;
+                margin: 4px 0;
+              }
+              .footer {
+                text-align: center;
+                margin-top: 20px;
+                font-weight: 900;
+                font-size: 9px;
+              }
+              .footer-sub {
+                font-size: 9px;
+                font-weight: 900;
+                margin-top: 4px;
+              }
+              @media print {
+                body {
+                  width: 100%;
+                  max-width: 100%;
+                  padding: 0;
+                  margin: 0;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="thermal-header">
+              <h1 class="thermal-title">SAR TAW SET</h1>
+              <h2 class="thermal-subtitle">SALES REPORT</h2>
+              <div class="thermal-meta">${periodLabel}</div>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="thermal-row">
+              <span>Date:</span>
+              <span style="font-weight: 700; max-width: 180px; text-align: right;">${periodDates}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Time:</span>
+              <span>${timestamp}</span>
+            </div>
+            
+            <div class="double-divider"></div>
+            
+            <div class="section-header">CATEGORY-WISE SALES</div>
+            
+            ${categoryProductsLines}
+            
+            <div class="double-divider"></div>
+            
+            <div class="thermal-row">
+              <span>Gross Product Sales:</span>
+              <span>${formatPrice(totalProductSales)}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Total Delivery Fee:</span>
+              <span>+${formatPrice(totalDeliveryFee || 0)}</span>
+            </div>
+            <div class="thermal-row" style="color: #000; font-style: italic;">
+              <span>Points Used (${totalPointsUsed || 0} PTS):</span>
+              <span>-${formatPrice(pointDiscountVal || 0)}</span>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="thermal-bold-row">
+              <span>NET REVENUE:</span>
+              <span>${formatPrice(finalNetRevenue)}</span>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="thermal-row">
+              <span>Delivered Orders:</span>
+              <span>${analyticsStats.deliveredOrders} / ${analyticsStats.totalOrders}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Average Order Value:</span>
+              <span>${formatPrice(analyticsStats.aov)}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Pending Orders:</span>
+              <span>${analyticsStats.pipelineCount}</span>
+            </div>
+            
+            <div class="section-header">PAYMENT METHODS</div>
+            ${paymentsLines}
+            
+            <div class="section-header">RIDER PERFORMANCE</div>
+            ${ridersLines}
+            
+            <div class="double-divider"></div>
+            
+            <div class="footer">
+              <div>*** END OF REPORT ***</div>
+              <div style="margin-top: 6px;">SAR TAW SET ENTERPRISE</div>
+              <div class="footer-sub">Thank You for Managing Fresh Goods</div>
+            </div>
+            
+            <script>
+              window.onload = function() {
+                setTimeout(() => {
+                  window.focus();
+                  window.print();
+                  window.close();
+                }, 1000);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWin.document.close();
+      toast.success("Opened compact thermal report print preview!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate report.");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -2383,7 +4534,7 @@ function DealManagement({
                       />
                       <input
                         className={`w-full p-4 rounded-xl border font-bold text-sm outline-none transition-all ${darkMode ? "bg-white/5 border-white/10 focus:border-primary" : "bg-gray-50 border-gray-100"}`}
-                        placeholder="Deal Title (မြန်မာ)"
+                        placeholder="Deal Title (Local)"
                         value={formData.titleMm}
                         onChange={(e) => setFormData({ ...formData, titleMm: e.target.value })}
                         required
@@ -3261,7 +5412,7 @@ function CategoriesTab({
                       <label className="text-[9px] font-black uppercase tracking-widest opacity-40 ml-2">Name (Myanmar)</label>
                       <input
                         className={`w-full p-4 rounded-lg border font-black text-xs outline-none transition-all ${darkMode ? "bg-white/5 border-white/10 focus:border-primary" : "bg-white border-gray-100 placeholder-opacity-20 font-sans"}`}
-                        placeholder="လတ်ဆတ်သော သစ်သီးများ"
+                        placeholder="Fresh Fruits"
                         value={newCategory.nameMm}
                         onChange={(e) => setNewCategory({ ...newCategory, nameMm: e.target.value })}
                       />
@@ -3968,7 +6119,7 @@ function CustomerDetailsView({
                       className="w-18 h-18 rounded-full object-cover border-2 border-primary/40 shadow-sm cursor-zoom-in hover:scale-105 active:scale-95 transition-all duration-300"
                       referrerPolicy="no-referrer"
                       onClick={() => setShowImagePreview(true)}
-                      title="Click to zoom / ပုံကြီးကြည့်ရန်"
+                      title="Click to zoom"
                     />
                     <span className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 ${
                       darkMode ? "border-zinc-900" : "border-white"
@@ -4927,7 +7078,7 @@ function CustomerDetailsView({
                         ? "bg-white/5 hover:bg-white/10 text-slate-300 border-white/5" 
                         : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
                     }`}
-                    title="Open in new tab / ပုံကြီးဖွင့်ရန်"
+                    title="Open in new tab"
                   >
                     <ExternalLink size={14} className="stroke-[2.5]" />
                   </a>
@@ -6607,53 +8758,54 @@ export default function AdminDashboard() {
             background: #fff; 
             color: #000000 !important;
             margin: 0; 
-            padding: 0;
+            padding: 2mm 1mm;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             width: 58mm;
             box-sizing: border-box;
             line-height: 1.1;
-            font-size: 14.5px;
-            font-weight: 800;
+            font-size: 15px;
+            font-weight: 900;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
             text-rendering: optimizeLegibility;
           }
           .thermal-receipt {
-            width: 52mm;
-            margin: 0 auto;
+            width: 100%;
+            margin: 0;
             padding: 4mm 0;
           }
-          * { color: #000000 !important; -webkit-print-color-adjust: exact; }
+          * { color: #000000 !important; font-weight: 900 !important; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .thermal-header { text-align: center; margin-bottom: 8px; border-bottom: 2.5px solid #000; padding-bottom: 6px; }
           .thermal-header h1 { margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 0.5px; }
-          .thermal-header p { margin: 1px 0; font-size: 13px; font-weight: 800; }
+          .thermal-header p { margin: 1px 0; font-size: 12px; font-weight: 900; }
           
-          .info-row { display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 12.5px; font-weight: 800; }
-          .info-val { font-weight: 900; }
+          .info-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2px; font-size: 13px; font-weight: 900; }
+          .info-row > span:first-child { flex-shrink: 0; margin-right: 8px; }
+          .info-val { font-weight: 900; word-break: break-word; text-align: right; }
           
-          table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+          table { width: 100%; border-collapse: collapse; margin: 6px 0; table-layout: fixed; }
           .line-sep { border-top: 1.5px dashed #000; margin: 6px 0; }
           .double-line { border-top: 2.5px solid #000; margin: 6px 0; }
           
           .item-row td { padding: 4px 0; vertical-align: top; }
-          .item-name { font-weight: 900; font-size: 15px; margin-bottom: 1px; }
-          .item-details { font-size: 12.5px; font-weight: 800; }
+          .item-name { font-weight: 900; font-size: 15px; margin-bottom: 1px; word-break: break-word; }
+          .item-details { font-size: 13px; font-weight: 900; }
           .item-price { text-align: right; font-weight: 900; font-size: 15px; }
 
           .total-section { margin-top: 6px; }
-          .total-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 15px; font-weight: 800; }
+          .total-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 15px; font-weight: 900; }
           .grand-total-row { 
             display: flex; 
             justify-content: space-between; 
             padding: 6px 0; 
-            font-size: 22px; 
+            font-size: 21px; 
             border-top: 2.5px solid #000; 
             border-bottom: 2.5px solid #000;
             margin: 4px 0;
-            font-weight: 1000;
+            font-weight: 900;
           }
           
-          .footer { text-align: center; margin-top: 12px; font-size: 12.5px; padding-top: 8px; border-top: 1.5px dashed #000; line-height: 1.4; font-weight: 800; }
+          .footer { text-align: center; margin-top: 12px; font-size: 13px; padding-top: 8px; border-top: 1.5px dashed #000; line-height: 1.4; font-weight: 900; }
         `;
 
         content = `
@@ -6677,9 +8829,9 @@ export default function AdminDashboard() {
             
             <table>
               <thead>
-                <tr style="border-bottom: 1px solid #000; font-size: 11.5px;">
-                  <th style="text-align: left; padding-bottom: 4px;">ITEM</th>
-                  <th style="text-align: right; padding-bottom: 4px;">AMOUNT</th>
+                <tr style="border-bottom: 1px solid #000; font-size: 15px;">
+                  <th style="text-align: left; padding-bottom: 4px; width: 65%;">ITEM</th>
+                  <th style="text-align: right; padding-bottom: 4px; width: 35%;">AMOUNT</th>
                 </tr>
               </thead>
               <tbody>
@@ -6727,14 +8879,14 @@ export default function AdminDashboard() {
               const IsCancelledItem = !!item.isCancelled;
               return `
           <tr style="border-bottom: 1px solid #ddd;">
-            <td style="padding: 10px 5px; text-align: center; font-size: 13px;">${index + 1}</td>
+            <td style="padding: 10px 5px; text-align: center; font-size: 9px;">${index + 1}</td>
             <td style="padding: 10px 10px; text-align: left;">
-              <div style="font-weight: 700; font-size: 14px; ${IsCancelledItem ? 'text-decoration: line-through;' : ''}">${item.name}${IsCancelledItem ? ' (Cancelled)' : ''}</div>
-              <div style="font-size: 11px; color: #555;">${item.mmName || ""}</div>
+              <div style="font-weight: 900; font-size: 12px; ${IsCancelledItem ? 'text-decoration: line-through;' : ''}">${item.name}${IsCancelledItem ? ' (Cancelled)' : ''}</div>
+              <div style="font-size: 9px; color: #555;">${item.mmName || ""}</div>
             </td>
-            <td style="padding: 10px 10px; text-align: right; font-family: monospace; font-size: 13px;">${formatPrice(item.price)}</td>
-            <td style="padding: 10px 5px; text-align: center; font-weight: 700; font-size: 13px;">${item.quantity}</td>
-            <td style="padding: 10px 10px; text-align: right; font-weight: 900; font-family: monospace; font-size: 14px; ${IsCancelledItem ? 'text-decoration: line-through;' : ''}">${IsCancelledItem ? formatPrice(0) : formatPrice(item.price * item.quantity)}</td>
+            <td style="padding: 10px 10px; text-align: right; font-family: monospace; font-size: 9px;">${formatPrice(item.price)}</td>
+            <td style="padding: 10px 5px; text-align: center; font-weight: 900; font-size: 9px;">${item.quantity}</td>
+            <td style="padding: 10px 10px; text-align: right; font-weight: 900; font-family: monospace; font-size: 12px; ${IsCancelledItem ? 'text-decoration: line-through;' : ''}">${IsCancelledItem ? formatPrice(0) : formatPrice(item.price * item.quantity)}</td>
           </tr>
         `;
             }
@@ -6748,7 +8900,7 @@ export default function AdminDashboard() {
           .header { display: flex; justify-content: space-between; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 15px; }
           .items-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 20px; }
           .items-table th { padding: 10px; font-size: 12px; font-weight: 900; text-transform: uppercase; border-top: 1px solid #000; border-bottom: 1px solid #000; text-align: center; }
-          .grand-total { border-top: 2px solid #000; margin-top: 20px; padding-top: 15px; font-size: 20px; font-weight: 900; display: flex; justify-content: space-between; }
+          .grand-total { border-top: 2px solid #000; margin-top: 20px; padding-top: 15px; font-size: 16px; font-weight: 900; display: flex; justify-content: space-between; }
         `;
 
         content = `
@@ -6763,15 +8915,15 @@ export default function AdminDashboard() {
 
             <div style="margin-bottom: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
                <div>
-                  <h3 style="font-size:10px; text-transform:uppercase; color:#888; border-bottom:1px solid #ddd; margin-bottom:8px;">Customer</h3>
+                  <h3 style="font-size: 9px; text-transform:uppercase; color:#888; border-bottom:1px solid #ddd; margin-bottom:8px;">Customer</h3>
                   <p style="font-weight:900; margin:0;">${order.customerName}</p>
-                  <p style="margin:4px 0; font-size:13px; color:#555;">${order.customerPhone}</p>
-                  <p style="margin:4px 0; font-size:13px; color:#555;">${order.address || "N/A"}</p>
+                  <p style="margin:4px 0; font-size: 9px; color:#555;">${order.customerPhone}</p>
+                  <p style="margin:4px 0; font-size: 9px; color:#555;">${order.address || "N/A"}</p>
                </div>
                <div style="text-align:right;">
-                  <h3 style="font-size:10px; text-transform:uppercase; color:#888; border-bottom:1px solid #ddd; margin-bottom:8px; display:inline-block; width:100%;">Order Summary</h3>
-                  <p style="margin:4px 0; font-size:13px;">Payment: <b>${order.paymentMethod.toUpperCase()}</b></p>
-                  <p style="margin:4px 0; font-size:13px;">Schedule: <b>${order.deliveryDay}</b></p>
+                  <h3 style="font-size: 9px; text-transform:uppercase; color:#888; border-bottom:1px solid #ddd; margin-bottom:8px; display:inline-block; width:100%;">Order Summary</h3>
+                  <p style="margin:4px 0; font-size: 9px;">Payment: <b>${order.paymentMethod.toUpperCase()}</b></p>
+                  <p style="margin:4px 0; font-size: 9px;">Schedule: <b>${order.deliveryDay}</b></p>
                </div>
             </div>
 
@@ -6870,6 +9022,7 @@ export default function AdminDashboard() {
     | "categories"
     | "settings"
     | "analytics"
+    | "sales-report"
     | "users"
     | "notifications"
     | "audit"
@@ -6980,7 +9133,7 @@ export default function AdminDashboard() {
 
   // Redirect Staff if on forbidden tab
   useEffect(() => {
-    const forbiddenTabs = ["analytics", "audit", "admins", "riders", "settings"];
+    const forbiddenTabs = ["analytics", "sales-report", "audit", "admins", "riders", "settings"];
     if (isSuperAdmin === false && forbiddenTabs.includes(activeTab)) {
       setActiveTab("orders");
     }
@@ -7246,93 +9399,478 @@ export default function AdminDashboard() {
       total: number;
       unit: string;
     }[];
-    const doc = new jsPDF();
-
-    // Header Section
-    doc.setFontSize(18);
-    doc.setTextColor(0);
-    doc.setFont("helvetica", "bold");
-    doc.text("MARKET PURCHASE LIST", 14, 20);
-
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(80);
-    doc.text(`Delivery Date: ${selectedDate}`, 14, 28);
-    doc.text(`Generated On: ${new Date().toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })}`, 14, 33);
-    doc.text(`Total Unique Items: ${marketItems.length}`, 14, 38);
-
-    // Line Separator
-    doc.setDrawColor(230);
-    doc.line(14, 42, 196, 42);
 
     const categories = Array.from(
       new Set(marketItems.map((i) => i.category)),
     ).sort();
-    let currentY = 50;
 
-    categories.forEach((cat) => {
-      const catItems = marketItems.filter((i) => i.category === cat);
-
-      // Check for page overflow before writing category title
-      if (currentY > 250) {
-        doc.addPage();
-        currentY = 20;
-      }
-
-      // Category Header
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(0);
-      doc.text(cat.toUpperCase(), 14, currentY);
-
-      const tableData = catItems.map((item, idx) => [
-        idx + 1,
-        item.name,
-        `${item.total} x ${item.unit}`,
-        "[  ]",
-      ]);
-
-      autoTable(doc, {
-        startY: currentY + 4,
-        head: [["#", "Description", "Quantity / Weight", "Check"]],
-        body: tableData,
-        theme: "grid",
-        headStyles: {
-          fillColor: [250, 250, 250],
-          textColor: [0, 0, 0],
-          fontStyle: "bold",
-          lineWidth: 0.1,
-          lineColor: [220, 220, 220],
-        },
-        styles: {
-          fontSize: 9,
-          cellPadding: 3.5,
-          lineColor: [240, 240, 240],
-          lineWidth: 0.1,
-          textColor: [50, 50, 50],
-        },
-        columnStyles: {
-          0: { cellWidth: 12, halign: "center" },
-          1: { cellWidth: "auto" },
-          2: { cellWidth: 45, halign: "right" },
-          3: { cellWidth: 20, halign: "center" },
-        },
-        margin: { left: 14, right: 14 },
-      });
-
-      currentY = (doc as any).lastAutoTable.finalY + 12;
+    const timestamp = new Date().toLocaleString("en-MY", {
+      timeZone: "Asia/Kuala_Lumpur",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
     });
 
-    // Page Numbers
-    const pageCount = (doc as any).internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(150);
-      doc.text(`Page ${i} of ${pageCount}`, 196, 287, { align: "right" });
+    const styles = `
+      @page { 
+        size: A4; 
+        margin: 20mm 15mm; 
+      }
+      body { 
+        background: #fff; 
+        color: #000000 !important;
+        margin: 0; 
+        padding: 2mm 0;
+        font-family: "Noto Sans Myanmar", "Pyidaungsu", "Padauk", "Myanmar3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        line-height: 1.5;
+        font-size: 12px;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .print-container {
+        width: 100%;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      .header {
+        border-bottom: 3px double #000;
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 26px;
+        font-weight: 900;
+        letter-spacing: 0.5px;
+      }
+      .header p {
+        margin: 2px 0;
+        font-size: 16px;
+        color: #333;
+      }
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 15px;
+        margin-bottom: 25px;
+        background: #f9f9f9;
+        padding: 12px 15px;
+        border: 1px solid #ddd;
+      }
+      .meta-item {
+        font-size: 16px;
+      }
+      .meta-item strong {
+        display: block;
+        font-size: 16px;
+        text-transform: uppercase;
+        color: #666;
+        margin-bottom: 2px;
+      }
+      .category-section {
+        margin-bottom: 25px;
+        page-break-inside: avoid;
+      }
+      .category-title {
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+        border-bottom: 2px solid #000;
+        padding-bottom: 4px;
+        margin-bottom: 10px;
+        color: #000;
+        display: flex;
+        justify-content: space-between;
+      }
+      .category-count {
+        font-size: 16px;
+        font-weight: normal;
+        color: #555;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 10px;
+      }
+      th {
+        background-color: #f5f5f5 !important;
+        border: 1px solid #ddd;
+        padding: 8px 12px;
+        font-size: 16px;
+        font-weight: 900;
+        text-transform: uppercase;
+        text-align: left;
+      }
+      td {
+        border: 1px solid #eee;
+        padding: 9px 12px;
+        font-size: 18px;
+      }
+      .col-num {
+        width: 40px;
+        text-align: center;
+        color: #777;
+        font-size: 16px;
+      }
+      .col-check {
+        width: 60px;
+        text-align: center;
+      }
+      .col-qty {
+        width: 150px;
+        text-align: right;
+        font-weight: 900;
+      }
+      .checkbox-square {
+        width: 16px;
+        height: 16px;
+        border: 1.5px solid #000;
+        margin: 0 auto;
+      }
+      .footer {
+        margin-top: 40px;
+        border-top: 1px solid #ddd;
+        padding-top: 15px;
+        text-align: center;
+        font-size: 12px;
+        color: #666;
+        page-break-inside: avoid;
+      }
+    `;
+
+    const categoriesHtml = categories.map(cat => {
+      const catItems = marketItems.filter((i) => i.category === cat);
+      const rowsHtml = catItems.map((item, idx) => `
+        <tr>
+          <td class="col-num">${idx + 1}</td>
+          <td>
+            <div style="display: flex; flex-direction: column; width: 100%;">
+              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <span style="font-weight: 900; font-size: 11px; color: #000;">${item.name}</span>
+                <span style="font-weight: 900; font-size: 11px; color: #000; margin-left: 12px; white-space: nowrap;">x ${item.total}</span>
+              </div>
+              <div style="font-weight: 900; font-size: 10px; color: #000000; margin-top: 2px; text-align: left;">
+                ${item.unit}
+              </div>
+            </div>
+          </td>
+          <td class="col-check"><div class="checkbox-square"></div></td>
+        </tr>
+      `).join('');
+
+      return `
+        <div class="category-section">
+          <div class="category-title">
+            <span>${cat.toUpperCase()}</span>
+            <span class="category-count">${catItems.length} items</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th class="col-num">#</th>
+                <th>Item Description / Quantity</th>
+                <th class="col-check">Done</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }).join('');
+
+    const content = `
+      <div class="print-container">
+        <div class="header">
+          <div>
+            <h1>MARKET PURCHASE LIST</h1>
+            <p style="font-size: 16px; font-weight: 900; color: #000; margin-top: 4px;">Shopping List</p>
+          </div>
+          <div style="text-align: right; font-size: 16px; color: #555;">
+            <strong>SAR TAW SET</strong>
+          </div>
+        </div>
+
+        <div class="meta-grid">
+          <div class="meta-item">
+            <strong>Delivery Date</strong>
+            <span style="font-size: 16px; font-weight: 900;">${selectedDate}</span>
+          </div>
+          <div class="meta-item">
+            <strong>Printed On</strong>
+            <span>${timestamp}</span>
+          </div>
+          <div class="meta-item">
+            <strong>Total Items</strong>
+            <span style="font-size: 16px; font-weight: 900;">${marketItems.length} items</span>
+          </div>
+        </div>
+
+        ${categoriesHtml}
+
+        <div class="footer">
+          <p style="font-weight: 900; margin: 0; font-size: 16px; color: #000;">SAR TAW SET - Market Purchasing Assistant</p>
+          <p style="margin: 4px 0 0 0;">Please keep this sheet as a confirmation of market purchasing list items.</p>
+        </div>
+      </div>
+    `;
+
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      toast.error("Popup blocked! Please allow popups to see the print window.");
+      return;
     }
 
-    doc.save(`Market_List_${selectedDate.replace(/\//g, "-")}.pdf`);
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Market_List_A4_${selectedDate.replace(/\//g, "-")}</title>
+          <style>${styles}</style>
+        </head>
+        <body>
+          ${content}
+          <script>
+            window.onload = function() {
+              setTimeout(() => {
+                window.focus();
+                window.print();
+                window.close();
+              }, 1000);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
+    toast.success("Opened print layout window!");
+  };
+
+  const handlePrintMarketListThermal = () => {
+    if (!selectedDate || !marketListByDate[selectedDate]) return;
+
+    const marketItems = Object.values(marketListByDate[selectedDate]) as {
+      name: string;
+      category: string;
+      total: number;
+      unit: string;
+    }[];
+
+    const categories = Array.from(
+      new Set(marketItems.map((i) => i.category)),
+    ).sort();
+
+    const timestamp = new Date().toLocaleString("en-MY", {
+      timeZone: "Asia/Kuala_Lumpur",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+
+    const styles = `
+      @page { size: 58mm auto; margin: 0; }
+      body { 
+        background: #fff; 
+        color: #000000 !important;
+        margin: 0; 
+        padding: 2mm 1mm;
+        font-family: "Noto Sans Myanmar", "Pyidaungsu", "Padauk", "Myanmar3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        width: 58mm;
+        box-sizing: border-box;
+        line-height: 1.5;
+        font-size: 12px;
+        font-weight: 900;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      * { color: #000000 !important; font-weight: 900 !important; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .thermal-receipt {
+        width: 100%;
+        margin: 0;
+        padding: 4mm 0;
+      }
+      .thermal-header { 
+        text-align: center; 
+        margin-bottom: 8px; 
+        border-bottom: 2.5px solid #000; 
+        padding-bottom: 6px; 
+      }
+      .thermal-header h1 { 
+        margin: 0; 
+        font-size: 25px; 
+        font-weight: 900; 
+      }
+      .thermal-header p { 
+        margin: 2px 0; 
+        font-size: 15px; 
+        font-weight: 900; 
+      }
+      .line-sep { 
+        border-top: 1.5px dashed #000; 
+        margin: 6px 0; 
+      }
+      .double-line { 
+        border-top: 2.5px solid #000; 
+        margin: 6px 0; 
+      }
+      .category-section {
+        margin-top: 10px;
+        page-break-inside: avoid;
+      }
+      .category-title {
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+        border-bottom: 1.5px solid #000;
+        padding-bottom: 2px;
+        margin-bottom: 4px;
+        letter-spacing: 0.5px;
+      }
+      .item-row {
+        display: flex;
+        align-items: flex-start;
+        padding: 6px 0;
+        border-bottom: 1px dotted #000;
+        page-break-inside: avoid;
+      }
+      .item-row:last-child {
+        border-bottom: none;
+      }
+      .checkbox-box {
+        width: 14px;
+        height: 14px;
+        border: 2.2px solid #000;
+        margin-right: 8px;
+        margin-top: 3.5px;
+        flex-shrink: 0;
+        display: inline-block;
+      }
+      .item-content {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .item-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        width: 100%;
+      }
+      .item-name {
+        font-weight: 900;
+        font-size: 16px;
+        word-break: break-word;
+        line-height: 1.4;
+        text-align: left;
+        color: #000000;
+        padding-right: 6px;
+      }
+      .item-qty {
+        font-weight: 900;
+        font-size: 16px;
+        text-align: right;
+        flex-shrink: 0;
+        white-space: nowrap;
+        line-height: 1.4;
+        color: #000000;
+      }
+      .footer { 
+        text-align: center; 
+        margin-top: 15px; 
+        font-size: 12px; 
+        padding-top: 8px; 
+        border-top: 1.5px dashed #000; 
+        line-height: 1.4; 
+        font-weight: 900;
+      }
+    `;
+
+    const categoriesHtml = categories.map(cat => {
+      const catItems = marketItems.filter((i) => i.category === cat);
+      const itemsHtml = catItems.map(item => `
+        <div class="item-row">
+          <div class="checkbox-box"></div>
+          <div class="item-content">
+            <div class="item-header-row">
+              <span class="item-name">${item.name}</span>
+              <span class="item-qty">x ${item.total}</span>
+            </div>
+            <div style="font-weight: 900; font-size: 16px; color: #000000; text-align: left; line-height: 1.3; margin-top: 2px;">${item.unit}</div>
+          </div>
+        </div>
+      `).join('');
+
+      return `
+        <div class="category-section">
+          <div class="category-title">${cat.toUpperCase()}</div>
+          ${itemsHtml}
+        </div>
+      `;
+    }).join('');
+
+    const content = `
+      <div class="thermal-receipt">
+        <div class="thermal-header">
+          <h1>MARKET LIST</h1>
+          <p style="font-size: 18px; font-weight: 900; margin: 2px 0;">Shopping List</p>
+        </div>
+        
+        <div class="info-section" style="font-size: 16px; font-weight: 900; line-height: 1.4;">
+          <div style="display: flex; justify-content: space-between;"><span>Date:</span><span style="font-weight: 900;">${selectedDate}</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>Printed:</span><span style="font-weight: 900;">${timestamp}</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>Unique Items:</span><span style="font-weight: 900;">${marketItems.length}</span></div>
+        </div>
+
+        <div class="double-line"></div>
+
+        ${categoriesHtml}
+
+        <div class="double-line"></div>
+        
+        <div class="footer">
+          <p style="font-weight: 900; margin: 0; font-size: 12px;">SAR TAW SET</p>
+          <p style="margin: 2px 0 0 0;">Market Purchasing Assistant</p>
+        </div>
+      </div>
+    `;
+
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      toast.error("Popup blocked! Please allow popups to see the print window.");
+      return;
+    }
+
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Market_List_Thermal_${selectedDate.replace(/\//g, "-")}</title>
+          <style>${styles}</style>
+        </head>
+        <body>
+          ${content}
+          <script>
+            window.onload = function() {
+              setTimeout(() => {
+                window.focus();
+                window.print();
+                window.close();
+              }, 1000);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
+    toast.success("Opened thermal print window!");
   };
 
   return (
@@ -7533,6 +10071,7 @@ export default function AdminDashboard() {
               <div className="space-y-1 pt-4">
                 {[
                   { id: "analytics", icon: BarChart3, label: "Analytics", superOnly: true },
+                  { id: "sales_report", icon: FileText, label: "Sales Report", superOnly: true },
                   { id: "orders", icon: ShoppingBag, label: t("orders") },
                   { id: "market", icon: ClipboardList, label: "Market List" },
                   { id: "products", icon: Package, label: t("products") },
@@ -7750,6 +10289,28 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {activeTab === "sales-report" && (
+              <div className="flex items-center gap-3 mb-6">
+                <h2
+                  className={`text-2xl font-black tracking-tight ${darkMode ? "text-on-surface" : "text-emerald-900"}`}
+                >
+                  Sales Report
+                </h2>
+                <div
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${
+                    darkMode
+                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                      : "bg-emerald-50 border-emerald-100 text-emerald-600"
+                  }`}
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[8px] font-black uppercase tracking-widest">
+                    Live Sync
+                  </span>
+                </div>
+              </div>
+            )}
+
             <AnimatePresence mode="wait">
               {activeTab === "analytics" && isSuperAdmin ? (
                 <motion.div
@@ -7767,6 +10328,22 @@ export default function AdminDashboard() {
                     isLowStockAlertEnabled={isLowStockAlertEnabled}
                     t={t}
                     categories={categories}
+                  />
+                </motion.div>
+              ) : activeTab === "sales_report" && isSuperAdmin ? (
+                <motion.div
+                  key="sales_report"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                >
+                  <SalesReportTab
+                    orders={orders}
+                    products={products}
+                    darkMode={darkMode}
+                    formatPrice={formatPrice}
+                    categories={categories}
+                    t={t}
                   />
                 </motion.div>
               ) : activeTab === "orders" ? (
@@ -8253,22 +10830,43 @@ export default function AdminDashboard() {
                               </p>
                             </div>
 
-                            <button
-                              onClick={handlePrintMarketList}
-                              className={`p-4 rounded-none border flex flex-col items-center justify-center gap-1 transition-all group active:scale-95 ${
-                                darkMode
-                                  ? "bg-primary border-primary hover:bg-primary/90 text-surface shadow-lg shadow-primary/20"
-                                  : "bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20"
-                              }`}
-                            >
-                              <FileText
-                                size={16}
-                                className="group-hover:scale-110 transition-transform"
-                              />
-                              <span className="text-[9px] font-black uppercase tracking-widest">
-                                Export PDF
-                              </span>
-                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={handlePrintMarketList}
+                                className={`flex-1 p-3 rounded-none border flex flex-col items-center justify-center gap-1 transition-all group active:scale-95 ${
+                                  darkMode
+                                    ? "bg-white/5 border-white/10 hover:bg-white/10 text-on-surface"
+                                    : "bg-[#f8faf9] border-gray-200 hover:bg-[#edf1ef] text-gray-700 shadow-sm"
+                                }`}
+                                title="Print A4 List"
+                              >
+                                <FileText
+                                  size={16}
+                                  className="group-hover:scale-110 transition-transform"
+                                />
+                                <span className="text-[9px] font-black uppercase tracking-widest text-center">
+                                  A4 Print
+                                </span>
+                              </button>
+
+                              <button
+                                onClick={handlePrintMarketListThermal}
+                                className={`flex-1 p-3 rounded-none border flex flex-col items-center justify-center gap-1 transition-all group active:scale-95 ${
+                                  darkMode
+                                    ? "bg-primary border-primary hover:bg-primary/90 text-surface shadow-lg shadow-primary/20"
+                                    : "bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20"
+                                }`}
+                                title="Thermal Print (58mm)"
+                              >
+                                <Printer
+                                  size={16}
+                                  className="group-hover:scale-110 transition-transform"
+                                />
+                                <span className="text-[9px] font-black uppercase tracking-widest text-center">
+                                  58mm Print
+                                </span>
+                              </button>
+                            </div>
                           </div>
 
                           <div

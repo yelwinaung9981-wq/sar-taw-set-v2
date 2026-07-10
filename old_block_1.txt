@@ -1,0 +1,218 @@
+        categoryProductsLines = '<div style="text-align: center; color: #000; padding: 10px 0; font-weight: 700;">No product sales in selected period</div>';
+      } else {
+        categoryProductsLines = groupsArray.map((group) => {
+          const prodsHtml = Object.values(group.products)
+            .sort((a, b) => b.revenue - a.revenue)
+            .map((p) => `
+              <div class="thermal-row item-line">
+                <span>${p.quantity}x ${p.name}</span>
+                <span>${formatPrice(p.revenue)}</span>
+              </div>
+            `).join('');
+
+          return `
+            <div class="category-block">
+              <div class="category-title-header">[ ${group.categoryName} ]</div>
+              ${prodsHtml}
+            </div>
+          `;
+        }).join('');
+      }
+
+      const paymentsLines = paymentStats.map((pay) => `
+        <div class="thermal-row">
+          <span>${pay.label} (${pay.count} tx)</span>
+          <span>${formatPrice(pay.total)}</span>
+        </div>
+      `).join('') || '<div style="text-align: center; color: #000;">No payment logs</div>';
+
+      const ridersLines = riderLeaderboard.map((rider) => `
+        <div class="thermal-row">
+          <span>${rider.name} (${rider.count} delv)</span>
+          <span>${formatPrice(rider.total)}</span>
+        </div>
+      `).join('') || '<div style="text-align: center; color: #000;">No rider logs</div>';
+
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Sales_Report_Thermal_${timeRange}</title>
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&family=Noto+Sans+Myanmar:wght@400;700;900&display=swap');
+              body {
+                font-family: "Inter", "Noto Sans Myanmar", sans-serif;
+                color: #000000;
+                background-color: #ffffff;
+                padding: 10px;
+                margin: 0;
+                width: 280px;
+                font-size: 12px;
+                line-height: 1.4;
+              }
+              .thermal-header {
+                text-align: center;
+                margin-bottom: 12px;
+              }
+              .thermal-title {
+                font-size: 16px;
+                font-weight: 900;
+                margin: 0;
+                text-transform: uppercase;
+              }
+              .thermal-subtitle {
+                font-size: 12px;
+                font-weight: 800;
+                margin: 4px 0 0 0;
+              }
+              .divider {
+                border-top: 1.5px dashed #000000;
+                margin: 10px 0;
+              }
+              .double-divider {
+                border-top: 3px double #000000;
+                margin: 10px 0;
+              }
+              .thermal-row {
+                display: flex;
+                justify-content: space-between;
+                font-weight: 700;
+                margin: 4px 0;
+                color: #000000;
+              }
+              .thermal-bold-row {
+                display: flex;
+                justify-content: space-between;
+                font-weight: 900;
+                font-size: 13px;
+                margin: 6px 0;
+                color: #000000;
+              }
+              .category-block {
+                margin-top: 12px;
+                margin-bottom: 8px;
+              }
+              .category-title-header {
+                font-weight: 900;
+                font-size: 11px;
+                text-transform: uppercase;
+                border-bottom: 1px dashed #000000;
+                padding-bottom: 2px;
+                margin-bottom: 6px;
+                color: #000000;
+              }
+              .section-header {
+                text-align: center;
+                font-weight: 900;
+                font-size: 11px;
+                margin-top: 15px;
+                margin-bottom: 6px;
+                text-transform: uppercase;
+                border-bottom: 1.5px solid #000000;
+                padding-bottom: 2px;
+                color: #000000;
+              }
+              .item-line {
+                font-weight: 700;
+                font-size: 11px;
+                color: #000000;
+                margin: 4px 0;
+              }
+              .footer {
+                text-align: center;
+                margin-top: 20px;
+                font-size: 11px;
+                font-weight: 800;
+                color: #000000;
+              }
+              @media print {
+                body {
+                  width: 100%;
+                  padding: 5px;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="thermal-header">
+              <h1 class="thermal-title">SAR TAW SET</h1>
+              <h2 class="thermal-subtitle">Sales Summary (Thermal Report)</h2>
+              <div style="font-size: 11px; font-weight: 800; margin-top: 4px; color: #000000;">${periodLabel}</div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="thermal-row">
+              <span>Period:</span>
+              <span style="font-weight: 900; text-align: right; max-width: 180px;">${periodDates}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Time:</span>
+              <span>${timestamp}</span>
+            </div>
+
+            <div class="double-divider"></div>
+
+            <div class="section-header">Products Sold by Category</div>
+            ${categoryProductsLines}
+
+            <div class="double-divider"></div>
+
+            <div class="thermal-row">
+              <span>Total Product Sales:</span>
+              <span>${formatPrice(totalProductSales)}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Total Delivery Fee:</span>
+              <span>+\${formatPrice(totalDeliveryFee)}</span>
+            </div>
+            <div class="thermal-row" style="color: #c62828;">
+              <span>Points Redeemed (\${totalPointsUsed} PTS):</span>
+              <span>-\${formatPrice(pointDiscountVal)}</span>
+            </div>
+
+            <div class="double-divider"></div>
+
+            <div class="thermal-bold-row" style="font-size: 14px; border-bottom: 1.5px solid #000000; padding-bottom: 4px;">
+              <span>NET REVENUE:</span>
+              <span>${formatPrice(finalNetRevenue)}</span>
+            </div>
+
+            <div class="thermal-row" style="margin-top: 10px;">
+              <span>Closed Orders:</span>
+              <span>${salesStats.deliveredOrders} / ${salesStats.totalOrders}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Avg Order Value:</span>
+              <span>${formatPrice(salesStats.aov)}</span>
+            </div>
+            <div class="thermal-row">
+              <span>Pipeline Orders:</span>
+              <span>${salesStats.pipelineCount}</span>
+            </div>
+
+            <div class="section-header">Payment Methods</div>
+            ${paymentsLines}
+
+            <div class="section-header">Delivery Riders</div>
+            ${ridersLines}
+
+            <div class="divider"></div>
+
+            <div class="footer">
+              <p style="margin: 0;">*** End of Report ***</p>
+              <p style="margin: 4px 0 0 0;">SAR TAW SET ENTERPRISE</p>
+              <p style="margin: 2px 0 0 0; font-size: 9px; font-weight: 700;">Thank You for Managing Fresh Goods</p>
+            </div>
+
+            <script>
+              window.onload = function() {
+                setTimeout(() => {
+                  window.focus();
+                  window.print();
+                  window.close();
+                }, 1000);
+              };
+            </script>
+          </body>
+        </html>
